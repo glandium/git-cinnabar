@@ -5,61 +5,83 @@
 import hashlib
 
 from tasks import (
+    Task,
     TaskEnvironment,
+    Tool,
     bash_command,
 )
 
 
 class OsxCommon(object):
-    os = 'macos'
-    cpu = 'x86_64'
+    os = "macos"
+    cpu = "x86_64"
 
     def __init__(self, name):
-        self.hexdigest = hashlib.sha1(
-            self.ITERATION.encode('utf-8')).hexdigest()
+        self.hexdigest = hashlib.sha1(self.ITERATION.encode("utf-8")).hexdigest()
         self.name = name
 
     def prepare_params(self, params):
-        assert 'workerType' not in params
-        params['provisionerId'] = 'proj-git-cinnabar'
-        params['workerType'] = 'osx{}'.format(self.worker_suffix)
+        assert "workerType" not in params
+        params["workerType"] = self.WORKER_TYPE
         command = []
-        command.append('export PWD=$(pwd)')
-        command.append('export ARTIFACTS=$PWD')
-        command.extend(params['command'])
-        params['command'] = bash_command(*command)
-        env = params.setdefault('env', {})
+        command.append("export PWD=$(pwd)")
+        command.append("export ARTIFACTS=$PWD")
+        command.extend(params["command"])
+        params["command"] = bash_command(*command)
+        env = params.setdefault("env", {})
         dev = env.setdefault(
-            'DEVELOPER_DIR',
-            '/Applications/Xcode_13.2.1.app/Contents/Developer')
+            "DEVELOPER_DIR", "/Applications/Xcode_15.2.app/Contents/Developer"
+        )
         env.setdefault(
-            'SDKROOT',
-            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk'
-            .format(dev))
+            "SDKROOT",
+            "{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk".format(dev),
+        )
         return params
 
 
 class Osx(OsxCommon, metaclass=TaskEnvironment):
-    ITERATION = '4'
-    PREFIX = 'osx'
-    worker_suffix = ''
-    os_version = '10.15'
+    ITERATION = "4"
+    PREFIX = "osx"
+    WORKER_TYPE = "osx"
+    os_version = "10.15"
 
 
 class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
-    cpu = 'arm64'
-    ITERATION = '2'
-    PREFIX = 'arm64-osx'
-    worker_suffix = ''
-    os_version = '10.15'
+    cpu = "arm64"
+    ITERATION = "2"
+    PREFIX = "arm64-osx"
+    WORKER_TYPE = "macos"
+    os_version = "11.0"
 
     def prepare_params(self, params):
-        env = params.setdefault('env', {})
-        dev = env.setdefault(
-            'DEVELOPER_DIR',
-            '/Applications/Xcode_13.2.1.app/Contents/Developer')
-        env.setdefault(
-            'SDKROOT',
-            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk'
-            .format(dev))
+        env = params.setdefault("env", {})
+        env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+        params["command"].insert(0, "export PATH=$PATH:/opt/homebrew/bin")
         return super(OsxArm64, self).prepare_params(params)
+
+
+class MacosSDK(Task, metaclass=Tool):
+    PREFIX = "macossdk"
+    SDK_VERSION = "14.5"
+    XCODE_VERSION = "15.4"
+
+    def __init__(self, name):
+        dev = f"/Applications/Xcode_{self.XCODE_VERSION}.app/Contents/Developer"
+        sdkroot = f"{dev}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX{self.SDK_VERSION}.sdk"
+        Task.__init__(
+            self,
+            description=f"macossdk {self.SDK_VERSION}",
+            task_env=TaskEnvironment.by_name("arm64-osx.build"),
+            command=[
+                f"cp -RH {sdkroot} MacOSX{self.SDK_VERSION}.sdk",
+                f"gtar --zstd -cf MacOSX{self.SDK_VERSION}.sdk.tar.zst MacOSX{self.SDK_VERSION}.sdk",
+            ],
+            artifact=f"MacOSX{self.SDK_VERSION}.sdk.tar.zst",
+            index=f"macossdk.{self.SDK_VERSION}",
+        )
+
+    def mount(self):
+        return {f"directory:MacOSX{self.SDK_VERSION}.sdk": self}
+
+    def install(self):
+        return [f"export SDKROOT=$(realpath $PWD/MacOSX{self.SDK_VERSION}.sdk)"]

@@ -1,16 +1,16 @@
 diff --git a/object-file.c b/object-file.c
-index 4df61c0ce6..b615d2e9c2 100644
+index 9915c8ad3a..e9f19cefe9 100644
 --- a/object-file.c
 +++ b/object-file.c
-@@ -44,6 +44,12 @@
- #include "submodule.h"
- #include "fsck.h"
+@@ -38,6 +38,12 @@
+ #include "loose.h"
+ #include "object-file-convert.h"
  
 +#define write_object_file_flags real_write_object_file_flags
 +
 +int real_write_object_file_flags(const void *buf, size_t len,
 +			    enum object_type type, struct object_id *oid,
-+			    unsigned flags);
++			    struct object_id *compat_oid_in, unsigned flags);
 +
  /* The maximum size for an object header. */
  #define MAX_HEADER_LEN 32

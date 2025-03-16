@@ -7,9 +7,6 @@ all:
 
 .SUFFIXES:
 
-install:
-	$(error Not a supported target)
-
 -include git-core/config.mak.uname
 
 git-core/config.mak.uname:
@@ -21,6 +18,7 @@ all: git-cinnabar$X git-remote-hg$X
 CARGO ?= cargo
 CARGO_BUILD_FLAGS ?= --release
 CARGO_FEATURES ?=
+prefix = /usr/local
 
 PROFILE = $(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)
 ifneq (,$(filter --target%,$(CARGO_BUILD_FLAGS)))
@@ -37,5 +35,8 @@ git-cinnabar$X git-remote-hg$X: $(GIT_CINNABAR) FORCE
 $(GIT_CINNABAR): CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
 $(GIT_CINNABAR): FORCE
 	$(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET))$(if $(CARGO_FEATURES), --features "$(CARGO_FEATURES)") $(CARGO_BUILD_FLAGS)
+
+install:
+	$(CARGO) install --path . --locked --root $(DESTDIR)$(prefix) --no-track
 
 .PHONY: FORCE

@@ -1,0 +1,51 @@
+[graph]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-gnu",
+]
+all-features = true
+
+[licenses]
+allow = [
+  "BSD-2-Clause",
+  "CC0-1.0",
+  "MIT",
+  "MPL-2.0",
+]
+exceptions = [
+    { allow = ["GPL-2.0"], crate = "git-cinnabar" },
+    { allow = ["Unicode-3.0"], crate = "unicode-ident" },
+    { allow = ["Unicode-3.0"], crate = "icu_collections" },
+    { allow = ["Unicode-3.0"], crate = "icu_locid" },
+    { allow = ["Unicode-3.0"], crate = "icu_locid_transform" },
+    { allow = ["Unicode-3.0"], crate = "icu_locid_transform_data" },
+    { allow = ["Unicode-3.0"], crate = "icu_normalizer" },
+    { allow = ["Unicode-3.0"], crate = "icu_normalizer_data" },
+    { allow = ["Unicode-3.0"], crate = "icu_properties" },
+    { allow = ["Unicode-3.0"], crate = "icu_properties_data" },
+    { allow = ["Unicode-3.0"], crate = "icu_provider" },
+    { allow = ["Unicode-3.0"], crate = "icu_provider_macros" },
+    { allow = ["Unicode-3.0"], crate = "litemap" },
+    { allow = ["Unicode-3.0"], crate = "tinystr" },
+    { allow = ["Unicode-3.0"], crate = "writeable" },
+    { allow = ["Unicode-3.0"], crate = "yoke" },
+    { allow = ["Unicode-3.0"], crate = "yoke-derive" },
+    { allow = ["Unicode-3.0"], crate = "zerovec" },
+    { allow = ["Unicode-3.0"], crate = "zerovec-derive" },
+    { allow = ["Unicode-3.0"], crate = "zerofrom" },
+    { allow = ["Unicode-3.0"], crate = "zerofrom-derive" },
+]
+
+[bans]
+multiple-versions = "deny"
+skip = [
+  { crate = "syn", reason = "ongoing transition from syn 1 to syn 2" },
+  { crate = "windows-sys", reason = "ongoing transition from windows-sys 0.52 to windows-sys 0.59. The alternative at the moment would be to stay with winapi, which is actually a bigger dependency." },
+]
+deny = [
+  # Now that we're off winapi, let's stay that way.
+  "winapi",
+]

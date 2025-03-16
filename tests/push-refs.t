@@ -43,11 +43,11 @@ Create a git clone of the above repository.
 
 Ensure the repository looks like what we assume further below.
 
-  $ git -C repo-git ls-remote hg::$REPO
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
-  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
   $ git -C repo-git log --graph --remotes --oneline --no-abbrev-commit
   * 23bcc26b9fea7e37426260465bed35eac54af5e1 f
@@ -63,11 +63,11 @@ And another clone with no cinnabar metadata.
 
   $ git init -q repo-git2
   $ git -C repo-git2 fetch -q ../repo-git refs/remotes/origin/*:refs/remotes/origin/*
-  $ git -C repo-git2 ls-remote hg::$REPO
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote hg::$REPO
   0000000000000000000000000000000000000000	HEAD
-  0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/tip
-  0000000000000000000000000000000000000000	refs/heads/branches/foo/tip
+  0000000000000000000000000000000000000000	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  0000000000000000000000000000000000000000	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
 Create empty mercurial repositories where we are going to push.
 
@@ -106,19 +106,19 @@ Pushing `a` and `c` to the default branch.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> branches/default/tip
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
 Pushing `b` fails because it would add a new head to the branch.
 
@@ -179,22 +179,22 @@ Force push `b`.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    + 7688446...d04f6df d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip (forced update)
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
 Add a changeset to the repository we are pushing to.
 
@@ -278,25 +278,25 @@ Force push `d`.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> branches/default/new-head
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
 
 Push `f`.
 
@@ -334,24 +334,36 @@ Force push `f`.
   To hg::.*/push-refs.t/repo-from-git (re)
    * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
-TODO: this should either fail because creating the branch is not supported,
-or work and create the branch
-#  $ git -C repo-git2 push origin -f 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  $ git -c cinnabar.experiments=branch -C repo-git2 push origin -f 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 2 changesets with 2 changes to 2 files (+1 heads)
+  To hg::.*/push-refs.t/repo-from-git2 (re)
+   * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
-  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
-  0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
-  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
 Removing heads or branches is not supported.
 
@@ -363,7 +375,7 @@ Removing heads or branches is not supported.
 
 Pushing/deleting tags is not supported.
 
-  $ git -C repo-git -c user.email=foo@bar tag -m 'Tagged' the-tag
+  $ git -C repo-git -c user.name=foo -c user.email=foo@bar tag -m 'Tagged' the-tag
   $ git -C repo-git push origin --tags
   To hg::.*/push-refs.t/repo-from-git (re)
    ! [remote rejected] the-tag -> the-tag (Pushing tags is unsupported)
@@ -385,7 +397,7 @@ Reset target mercurial repositories.
 
 Reset cinnabar metadata in repo-git2.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once.
 
@@ -407,9 +419,15 @@ Push everything at once.
    * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> branches/default/head2
    * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
-TODO: this should either fail for the foo branch because creating the branch
-is not supported, or work and create the branch
-#  $ git -C repo-git2 push origin 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  $ git -c cinnabar.experiments=branch -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/head1 5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611:refs/heads/branches/default/head2 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 6 changesets with 6 changes to 6 files (+2 heads)
+  To hg::.*/push-refs.t/repo-from-git2 (re)
+   * [new branch]      d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/head1
+   * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> branches/default/head2
+   * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
   $ git -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
@@ -417,12 +435,39 @@ is not supported, or work and create the branch
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
   $ git -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
+  From hg::.*/push-refs.t/repo-from-git (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
 Reset target mercurial repositories again.
 
@@ -433,7 +478,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push a bookmark on `c`.
 
@@ -463,22 +508,22 @@ Push a bookmark on `c`.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> bookmarks/qux
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote hg::$REPO-from-hg
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
-  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/tip
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
 
 Push the same bookmark, pointing to `b`.
 
@@ -537,25 +582,25 @@ Force push the bookmark to `b`.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    + 7688446...d04f6df d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> bookmarks/qux (forced update)
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote hg::$REPO-from-hg
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/qux
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/qux
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/qux
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
 Remove the bookmark pushed above.
 
@@ -575,22 +620,22 @@ Remove the bookmark pushed above.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    - [deleted]         bookmarks/qux
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote hg::$REPO-from-hg
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/branches/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/tip
 
 Add a changeset to the repository we are pushing to and make the `qux`
 bookmark point to it.
@@ -646,28 +691,28 @@ Force push the same bookmark.
   To hg::.*/push-refs.t/repo-from-git2 (re)
    * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> bookmarks/qux
 
-  $ git -C repo-git ls-remote hg::$REPO-from-hg
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/qux
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
   0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
 
-  $ git -C repo-git ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/qux
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
   0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
 
-  $ git -C repo-git2 ls-remote
+  $ git -c cinnabar.refs=heads,bookmarks -C repo-git2 ls-remote
   From hg::.*/push-refs.t/repo-from-git2 (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/qux
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
   0000000000000000000000000000000000000000	refs/heads/branches/default/a08654acdc93834f96695eff2760efaa4e3562bc
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
 
 Reset target mercurial repositories again.
 
@@ -678,7 +723,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once, with bookmarks.
 
@@ -717,6 +762,12 @@ Push everything at once, with bookmarks.
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
   $ git -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
@@ -726,6 +777,13 @@ Push everything at once, with bookmarks.
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
+  $ git -c cinnabar.refs=heads -C repo-git ls-remote
+  From hg::.*/push-refs.t/repo-from-git (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
 Remote multiple bookmarks.
 

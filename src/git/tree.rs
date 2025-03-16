@@ -6,12 +6,13 @@ use std::io::{self, Write};
 
 use digest::OutputSizeUser;
 use either::Either;
+use hex_literal::hex;
 
 use super::{git_oid_type, GitObjectId, GitOid};
-use crate::libgit::{FileMode, RawTree};
+use crate::libgit::{strbuf, FileMode};
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
-use crate::util::{FromBytes, SliceExt};
+use crate::util::SliceExt;
 
 git_oid_type!(TreeId(GitObjectId));
 
@@ -68,9 +69,20 @@ impl ParseTree for RawTree {
 
     fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error> {
         (|| {
-            let [mode, remainder] = buf.splitn_exact(b' ')?;
-            let mode = FileMode::from_bytes(mode).ok()?;
-            let [path, remainder] = remainder.splitn_exact(b'\0')?;
+            let mut mode = 0u16;
+            let mut bytes = buf.iter();
+            for b in &mut bytes {
+                match b {
+                    b' ' => break,
+                    b'0'..=b'7' => {
+                        mode <<= 3;
+                        mode += (b - b'0') as u16;
+                    }
+                    _ => return None,
+                }
+            }
+            let mode = FileMode::from(mode);
+            let [path, remainder] = bytes.as_slice().splitn_exact(b'\0')?;
             if path.is_empty() {
                 return None;
             }
@@ -102,10 +114,37 @@ impl IntoIterator for RawTree {
     }
 }
 
+impl FromIterator<WithPath<TreeEntry>> for RawTree {
+    fn from_iter<T: IntoIterator<Item = WithPath<TreeEntry>>>(iter: T) -> Self {
+        let mut tree_buf = strbuf::new();
+        for (path, entry) in iter.into_iter().map(WithPath::unzip) {
+            let (mode, oid) = match entry {
+                Either::Left(tid) => (FileMode::DIRECTORY, GitObjectId::from(tid)),
+                Either::Right(entry) => (entry.mode, entry.oid.into()),
+            };
+            // TODO: avoid temporary allocation here.
+            tree_buf.extend_from_slice(format!("{:o} ", u16::from(mode)).as_bytes());
+            tree_buf.extend_from_slice(&path);
+            tree_buf.extend_from_slice(b"\0");
+            tree_buf.extend_from_slice(oid.as_raw_bytes());
+        }
+        RawTree(Some(tree_buf.into()))
+    }
+}
+
 impl RecurseAs<TreeIter<RawTree>> for TreeEntry {
     type NonRecursed = RecursedTreeEntry;
 
     fn maybe_recurse(self) -> Either<TreeIter<RawTree>, RecursedTreeEntry> {
         self.map_left(|tree_id| RawTree::read(tree_id).unwrap().into_iter())
     }
+}
+
+super::raw_object!(OBJ_TREE | TreeId => RawTree);
+
+impl RawTree {
+    pub const EMPTY_OID: TreeId =
+        TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+
+    pub const EMPTY: RawTree = RawTree(None);
 }

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define USE_THE_REPOSITORY_VARIABLE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,11 @@ struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }
 
+void reset_ref_store(struct repository *r) {
+	ref_store_release(r->refs_private);
+	FREE_AND_NULL(r->refs_private);
+}
+
 struct rev_info *rev_list_new(int argc, const char **argv) {
 	struct rev_info *revs = xmalloc(sizeof(*revs));
 
@@ -84,6 +90,14 @@ int maybe_boundary(struct rev_info *revs, struct commit *commit) {
 	return 0;
 }
 
+const struct commit *commit_list_item(const struct commit_list *list) {
+	return list->item;
+}
+
+const struct commit_list *commit_list_next(const struct commit_list *list) {
+	return list->next;
+}
+
 struct diff_tree_file {
 	struct object_id *oid;
 	char *path;
@@ -103,7 +117,7 @@ struct diff_tree_ctx {
 };
 
 static void diff_tree_cb(struct diff_queue_struct *q,
-                         struct diff_options *opt, void *data)
+                         struct diff_options *opt UNUSED, void *data)
 {
 	struct diff_tree_ctx *ctx = data;
 	int i;
@@ -211,34 +225,39 @@ static void init_git_config(void)
 	strbuf_release(&path);
 }
 
-static void cleanup_git_config(void)
+static void cleanup_git_config(int nongit)
 {
 	const char *value;
 	if (!git_config_get_value("cinnabar.fsck", &value)) {
 		// We used to set cinnabar.fsck globally, then locally.
 		// Remove both.
 		char *user_config, *xdg_config;
-		git_global_config(&user_config, &xdg_config);
+		git_global_config_paths(&user_config, &xdg_config);
 		if (user_config) {
 			if (access_or_warn(user_config, R_OK, 0) &&
 				xdg_config &&
 				!access_or_warn(xdg_config, R_OK, 0))
 			{
 				git_config_set_in_file_gently(
-					xdg_config, "cinnabar.fsck", NULL);
+					xdg_config, "cinnabar.fsck", NULL,
+					NULL);
 			} else {
 				git_config_set_in_file_gently(
-					user_config, "cinnabar.fsck", NULL);
+					user_config, "cinnabar.fsck", NULL,
+					NULL);
 			}
 		}
 		free(user_config);
 		free(xdg_config);
-		user_config = git_pathdup("config");
-		if (user_config) {
-			git_config_set_in_file_gently(
-				user_config, "cinnabar.fsck", NULL);
+		if (!nongit) {
+			user_config = git_pathdup("config");
+			if (user_config) {
+				git_config_set_in_file_gently(
+					user_config, "cinnabar.fsck", NULL,
+					NULL);
+			}
+			free(user_config);
 		}
-		free(user_config);
 	}
 }
 
@@ -260,8 +279,8 @@ const char *remote_get_name(const struct remote *remote)
 void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr)
 {
-	*url = remote->url;
-	*url_nr = remote->url_nr;
+	*url = remote->url.v;
+	*url_nr = remote->url.nr;
 }
 
 int remote_skip_default_update(const struct remote *remote)
@@ -344,8 +363,6 @@ const struct object_id *get_worktree_head_oid(const struct worktree *wr)
 	return &wr->head_oid;
 }
 
-int nongit = 0;
-
 extern NORETURN void do_panic(const char *err, size_t len);
 
 static NORETURN void die_panic(const char *err, va_list params)
@@ -355,8 +372,10 @@ static NORETURN void die_panic(const char *err, va_list params)
 	do_panic(msg, (size_t)(len < 0) ? 0 : len);
 }
 
-void init_cinnabar(const char *argv0)
+int init_cinnabar(const char *argv0)
 {
+	int nongit = 0;
+
 	set_die_routine(die_panic);
 
 	// Initialization from common-main.c.
@@ -367,19 +386,42 @@ void init_cinnabar(const char *argv0)
 
 	git_setup_gettext();
 
-	initialize_the_repository();
+	initialize_repository(the_repository);
 
 	attr_start();
 
 	init_git_config();
 	setup_git_directory_gently(&nongit);
 	git_config(git_diff_basic_config, NULL);
-	cleanup_git_config();
+	cleanup_git_config(nongit);
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
+
+	// In git 2.44, git clone doesn't create a repository that
+	// setup_git_directory_gently will recognize as a git directory.
+	// The first indicator that we might be in a git clone is that
+	// GIT_DIR is set.
+	if (getenv("GIT_DIR") != NULL) {
+		if (nongit) {
+			// If GIT_DIR is set and setup_git_directory_gently
+			// says we're not in a git directory, assume we're in
+			// that weird git 2.44 case.
+			struct strbuf err = STRBUF_INIT;
+			check_repository_format(NULL);
+			if (ref_store_create_on_disk(
+					get_main_ref_store(the_repository),
+					0, &err))
+				die("failed to set up refs db: %s", err.buf);
+			nongit = 0;
+		}
+	}
+	if (!nongit) {
+		prepare_repo_settings(the_repository);
+	}
+	return !nongit;
 }
 
-int common_exit(const char *file, int line, int code)
+int common_exit(const char *file UNUSED, int line UNUSED, int code)
 {
 	return code;
 }

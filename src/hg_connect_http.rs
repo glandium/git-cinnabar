@@ -3,15 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::ToOwned;
-use std::convert::AsRef;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fs::File;
-use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{self, stderr, Cursor, Read, Write};
 use std::os::raw::{c_char, c_int, c_long};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::{cmp, mem, ptr};
 
@@ -20,13 +19,15 @@ use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
 use cstr::cstr;
 use curl_sys::{
-    curl_easy_getinfo, curl_easy_setopt, curl_slist_append, curl_slist_free_all, CURL,
-    CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE,
-    CURLOPT_ACCEPT_ENCODING, CURLOPT_CAINFO, CURLOPT_FAILONERROR, CURLOPT_FILE,
+    curl_easy_getinfo, curl_easy_setopt, curl_infotype, curl_slist_append, curl_slist_free_all,
+    CURL, CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_HEADER_IN, CURLINFO_HEADER_OUT,
+    CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE, CURLOPT_ACCEPT_ENCODING, CURLOPT_CAINFO,
+    CURLOPT_DEBUGDATA, CURLOPT_DEBUGFUNCTION, CURLOPT_FAILONERROR, CURLOPT_FILE,
     CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST,
     CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
-    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    CURLOPT_USERAGENT, CURLOPT_VERBOSE, CURLOPT_WRITEFUNCTION,
 };
+use derive_more::Debug;
 use either::Either;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
@@ -44,7 +45,12 @@ use crate::libgit::{
     credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config,
     run_one_slot, slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SliceExt, ToBoxed};
+use crate::logging::{self, LoggingReader, LoggingWriter};
+use crate::util::{
+    ExactSizeReadRewind, ImmutBString, OsStrExt, PrefixWriter, ReadExt, SliceExt, ToBoxed,
+};
+
+pub static CURL_GLOBAL_INIT: OnceLock<()> = OnceLock::new();
 
 mod git_http_state {
     use std::ffi::CString;
@@ -79,6 +85,13 @@ mod git_http_state {
             match &self.url {
                 Some(url) if url == &normalized_url => {}
                 _ => {
+                    super::CURL_GLOBAL_INIT.get_or_init(|| {
+                        if unsafe { curl_sys::curl_global_init(curl_sys::CURL_GLOBAL_ALL) }
+                            != curl_sys::CURLE_OK
+                        {
+                            crate::die!("curl_global_init failed");
+                        }
+                    });
                     let c_url = CString::new(normalized_url.to_string()).unwrap();
                     unsafe {
                         if self.url.is_some() {
@@ -126,34 +139,6 @@ pub struct HgHttpConnection {
  *
  * The command results are simply the corresponding HTTP responses.
  */
-
-/// A `Read` that knows its exact length and can seek to its beginning.
-trait ExactSizeReadRewind: Read {
-    fn len(&self) -> io::Result<u64>;
-
-    fn rewind(&mut self) -> io::Result<()>;
-}
-
-impl ExactSizeReadRewind for File {
-    fn len(&self) -> io::Result<u64> {
-        self.metadata().map(|m| m.len())
-    }
-
-    fn rewind(&mut self) -> io::Result<()> {
-        self.seek(SeekFrom::Start(0)).map(|_| ())
-    }
-}
-
-impl<T: AsRef<[u8]>> ExactSizeReadRewind for Cursor<T> {
-    fn len(&self) -> io::Result<u64> {
-        Ok(self.get_ref().as_ref().len().try_into().unwrap())
-    }
-
-    fn rewind(&mut self) -> io::Result<()> {
-        self.set_position(0);
-        Ok(())
-    }
-}
 
 enum Body {
     None,
@@ -234,18 +219,18 @@ fn test_exactsize_read_rewind_body() {
     body1.add(Cursor::new(a));
 
     assert_eq!(body1.len().unwrap(), 4);
-    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+    assert_eq!(&body1.read_all().unwrap()[..], b"abcd");
     body1.rewind().unwrap();
-    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+    assert_eq!(&body1.read_all().unwrap()[..], b"abcd");
 
     let mut body2 = Body::new();
     body2.add(Cursor::new(a));
     body2.add(Cursor::new(b));
 
     assert_eq!(body2.len().unwrap(), 7);
-    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+    assert_eq!(&body2.read_all().unwrap()[..], b"abcdefg");
     body2.rewind().unwrap();
-    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+    assert_eq!(&body2.read_all().unwrap()[..], b"abcdefg");
 
     let mut body3 = Body::new();
     body3.add(Cursor::new(a));
@@ -253,9 +238,9 @@ fn test_exactsize_read_rewind_body() {
     body3.add(Cursor::new(c));
 
     assert_eq!(body3.len().unwrap(), 13);
-    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+    assert_eq!(&body3.read_all().unwrap()[..], b"abcdefghijklm");
     body3.rewind().unwrap();
-    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+    assert_eq!(&body3.read_all().unwrap()[..], b"abcdefghijklm");
 }
 
 pub struct HttpRequest {
@@ -264,6 +249,7 @@ pub struct HttpRequest {
     body: Body,
     follow_redirects: bool,
     token: Arc<GitHttpStateToken>,
+    log_target: Option<String>,
 }
 
 #[derive(Debug)]
@@ -273,15 +259,14 @@ struct HttpResponseInfo {
     content_type: Option<String>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<ImmutBString>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
     #[allow(dead_code)]
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     token: Arc<GitHttpStateToken>,
 }
 
@@ -291,6 +276,29 @@ struct HttpThreadData {
     sender: Sender<HttpRequestChannelData>,
     curl: *mut CURL,
     first: bool,
+    logger: Option<LoggingWriter<'static, std::io::Sink>>,
+}
+
+unsafe extern "C" fn trace_log_callback(
+    _curl: *const CURL,
+    typ: curl_infotype,
+    data: *const c_char,
+    size: usize,
+    context: *mut c_void,
+) -> c_int {
+    let target = (context as *const c_void as *const String)
+        .as_ref()
+        .unwrap();
+    let direction = match typ {
+        CURLINFO_HEADER_IN => logging::Direction::Receive,
+        CURLINFO_HEADER_OUT => logging::Direction::Send,
+        _ => return 0,
+    };
+    let data = std::slice::from_raw_parts(data as *const _, size);
+    for line in data.lines() {
+        trace!(target: target, "{} {}", direction, line.as_bstr());
+    }
+    0
 }
 
 impl HttpRequest {
@@ -302,7 +310,12 @@ impl HttpRequest {
             body: Body::new(),
             follow_redirects: false,
             token: Arc::new(token),
+            log_target: None,
         }
+    }
+
+    pub fn set_log_target(&mut self, target: String) {
+        self.log_target = log_enabled!(target: &target, log::Level::Trace).then_some(target);
     }
 
     pub fn follow_redirects(&mut self, enable: bool) {
@@ -324,7 +337,8 @@ impl HttpRequest {
         let thread = thread::Builder::new()
             .name("HTTP".into())
             .spawn(move || unsafe {
-                let url = CString::new(self.url.to_string()).unwrap();
+                let url = self.url.to_string();
+                let url = CString::new(url).unwrap();
                 let slot = get_active_slot().as_mut().unwrap();
                 curl_easy_setopt(slot.curl, CURLOPT_URL, url.as_ptr());
                 curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
@@ -341,6 +355,15 @@ impl HttpRequest {
                     sender,
                     curl: slot.curl,
                     first: true,
+                    logger: self.log_target.as_ref().map(|log_target| {
+                        let mut writer = LoggingWriter::new_hex(
+                            log_target.clone(),
+                            log::Level::Trace,
+                            std::io::sink(),
+                        );
+                        writer.set_direction(logging::Direction::Receive);
+                        writer
+                    }),
                 };
                 curl_easy_setopt(slot.curl, CURLOPT_FILE, &mut data);
                 curl_easy_setopt(
@@ -359,6 +382,13 @@ impl HttpRequest {
                     /* Ensure we have no state from a previous attempt that failed because
                      * of authentication (401). */
                     self.body.rewind().unwrap();
+                    if let Some(log_target) = &self.log_target {
+                        let body = mem::replace(&mut self.body, Body::None);
+                        let mut reader =
+                            LoggingReader::new_hex(log_target.clone(), log::Level::Trace, body);
+                        reader.set_direction(logging::Direction::Send);
+                        self.body.add(reader);
+                    }
                     curl_easy_setopt(slot.curl, CURLOPT_READDATA, &mut self.body);
                     curl_easy_setopt(
                         slot.curl,
@@ -421,6 +451,15 @@ impl HttpRequest {
                     let ca_info_path = CString::new(CA_INFO_PATH.as_os_str().as_bytes()).unwrap();
                     curl_easy_setopt(slot.curl, CURLOPT_CAINFO, ca_info_path.as_ptr());
                 }
+                if let Some(log_target) = &self.log_target {
+                    curl_easy_setopt(slot.curl, CURLOPT_VERBOSE, 1);
+                    curl_easy_setopt(
+                        slot.curl,
+                        CURLOPT_DEBUGFUNCTION,
+                        trace_log_callback as *const c_void,
+                    );
+                    curl_easy_setopt(slot.curl, CURLOPT_DEBUGDATA, log_target as *const String);
+                }
                 let mut results = slot_results::new();
                 let result = run_one_slot(slot, &mut results);
                 curl_slist_free_all(headers);
@@ -457,7 +496,10 @@ impl HttpRequest {
         self.execute_once()
             .or_else(|(result, this)| {
                 if result == HTTP_REAUTH {
-                    unsafe { credential_fill(&mut http_auth) };
+                    if let Some(log_target) = &this.log_target {
+                        trace!(target: &log_target, "Request required reauthentication");
+                    }
+                    unsafe { credential_fill(ptr::addr_of_mut!(http_auth), 1) };
                     this.execute_once()
                 } else {
                     Err((result, this))
@@ -561,6 +603,31 @@ fn http_send_info(data: &mut HttpThreadData) {
                     None
                 }
             };
+            if data.logger.as_ref().map(LoggingWriter::log_target) == Some("raw-wire::capabilities")
+            {
+                match content_type.as_deref() {
+                    Some("application/mercurial-0.1" | "application/mercurial-0.2") => {}
+                    _ => {
+                        // If the response to the capabilities request is a bundle, log in
+                        // a different category.
+                        // Ideally we'd log the headers too with the switched logger, but
+                        // it's too late for that.
+                        trace!(
+                            target: "raw-wire::capabilities",
+                            "Not a capabilities response; switching to clonebundle.",
+                        );
+                        if log_enabled!(target: "raw-wire::clonebundle", log::Level::Trace) {
+                            let mut writer = LoggingWriter::new_hex(
+                                "raw-wire::clonebundle".to_string(),
+                                log::Level::Trace,
+                                std::io::sink(),
+                            );
+                            writer.set_direction(logging::Direction::Receive);
+                            data.logger = Some(writer);
+                        }
+                    }
+                }
+            }
             data.sender
                 .send(Either::Left(HttpResponseInfo {
                     http_status: http_status as usize,
@@ -580,7 +647,10 @@ unsafe extern "C" fn http_request_execute(
 ) -> usize {
     let data = (data as *mut HttpThreadData).as_mut().unwrap();
     http_send_info(data);
-    let buf = std::slice::from_raw_parts(ptr as *const u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts(ptr as *const _, size.checked_mul(nmemb).unwrap());
+    if let Some(logger) = &mut data.logger {
+        logger.write_all(buf).unwrap();
+    }
     if data.sender.send(Either::Right(buf.to_boxed())).is_err() {
         return 0;
     }
@@ -602,7 +672,16 @@ impl HgHttpConnection {
             .and_then(|s| usize::from_str(s).ok())
             .unwrap_or(0);
 
-        let httppostargs = self.get_capability(b"httppostargs").is_some();
+        let httppostargs = self.get_capability(b"httppostargs").is_some()
+            // Versions of mercurial >= 3.8 < 4.4 don't handle httppostargs
+            // on commands that are already POST. We check for the `phases`
+            // bundle2 capability, which was introduced in mercurial 4.4.
+            && ((command != "unbundle" && command != "pushkey")
+                || self
+                    .get_capability(b"bundle2")
+                    .unwrap_or(b"".as_bstr())
+                    .split(|x| *x == b'\n')
+                    .any(|x| x.starts_with(b"phases=")));
 
         let mut command_url = self.url.clone();
         let mut query_pairs = command_url.query_pairs_mut();
@@ -613,11 +692,15 @@ impl HgHttpConnection {
         if !args.is_empty() && (httppostargs || httpheader > 0) {
             let mut encoder = form_urlencoded::Serializer::new(String::new());
             for (name, value) in args.iter() {
-                encoder.append_pair(name, value);
+                encoder.append_pair(name, &value.as_string());
             }
             let args = encoder.finish();
             if httppostargs {
                 headers.push(("X-HgArgs-Post".to_string(), args.len().to_string()));
+                headers.push((
+                    "Content-Type".to_string(),
+                    "application/mercurial-0.1".to_string(),
+                ));
                 body = Some(args);
             } else {
                 let mut args = &args[..];
@@ -635,12 +718,13 @@ impl HgHttpConnection {
             }
         } else {
             for (name, value) in args.iter() {
-                query_pairs.append_pair(name, value);
+                query_pairs.append_pair(name, &value.as_string());
             }
         }
         drop(query_pairs);
 
         let mut request = HttpRequest::new(command_url);
+        request.set_log_target(format!("raw-wire::{}", command));
         if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_ALWAYS {
             request.follow_redirects(true);
         }
@@ -755,6 +839,14 @@ impl HgConnectionBase for HgHttpConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
+
+    fn sample_size(&self) -> usize {
+        if self.capabilities.get_capability(b"httppostargs").is_some() {
+            10000
+        } else {
+            100
+        }
+    }
 }
 
 impl Drop for HgHttpConnection {
@@ -784,7 +876,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
     data: *const c_void,
 ) -> usize {
     let read = (data as *mut R).as_mut().unwrap();
-    let buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts_mut(ptr as *mut _, size.checked_mul(nmemb).unwrap());
     read.read(buf).unwrap()
 }
 
@@ -799,13 +891,9 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
      * the repo url with a query string "?cmd=capabilities". If the remote
      * url is not actually a repo, but a bundle, the content will start with
      * 'HG10' or 'HG20', which is not something that would appear as the first
-     * four characters for the "capabilities" answer. In that case, we output
-     * the stream to stdout.
+     * four characters for the "capabilities" answer.
      * (Note this assumes HTTP servers serving bundles don't care about query
      * strings)
-     * Ideally, it would be good to pause the curl request, return a
-     * hg_connection, and give control back to the caller, but git's http.c
-     * doesn't allow pauses.
      */
     let mut http_req = conn.start_command_request("capabilities", args!());
     if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
@@ -813,22 +901,18 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     }
     let mut http_resp = http_req.execute().unwrap();
     conn.handle_redirect(&http_resp);
-    let header = (&mut http_resp).take(4).read_all().unwrap();
-    match &*header {
-        b"HG10" | b"HG20" => Some(Box::new(BundleConnection::new(
-            HttpConnectionHoldingReader {
-                reader: Cursor::new(header).chain(http_resp),
-                conn,
-            },
-        ))),
-
-        _ => {
-            let mut caps = Vec::<u8>::new();
-            caps.extend_from_slice(&header);
-            copy(&mut http_resp, &mut caps).unwrap();
+    match http_resp.content_type() {
+        Some("application/mercurial-0.1" | "application/mercurial-0.2") => {
+            let caps = http_resp.read_all().unwrap();
             drop(http_resp);
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
             Some(Box::new(HgWired::new(conn)))
         }
+        _ => Some(Box::new(BundleConnection::new(
+            HttpConnectionHoldingReader {
+                reader: http_resp,
+                conn,
+            },
+        ))),
     }
 }

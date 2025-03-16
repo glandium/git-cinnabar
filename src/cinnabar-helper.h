@@ -8,7 +8,7 @@
 #include "hg-data.h"
 #include "cinnabar-notes.h"
 
-struct Metadata;
+struct Store;
 
 #define METADATA_REF "refs/cinnabar/metadata"
 
@@ -17,6 +17,10 @@ extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 
 #define CHECK_HELPER 0x1
 #define CHECK_MANIFESTS 0x2
+
+struct repository;
+
+extern void reset_ref_store(struct repository *r);
 
 extern int cinnabar_check(int);
 
@@ -29,7 +33,7 @@ void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr);
 int remote_skip_default_update(const struct remote *remote);
 
-void init_cinnabar(const char *argv0);
+int init_cinnabar(const char *argv0);
 
 void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,
@@ -40,7 +44,7 @@ unsigned int replace_map_tablesize(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
-const struct object_id *resolve_hg2git(struct Metadata *metadata,
+const struct object_id *resolve_hg2git(struct Store *store,
                                        const struct hg_object_id *oid);
 
 struct commit;
@@ -49,6 +53,8 @@ struct object_id *commit_oid(struct commit *c);
 struct rev_info *rev_list_new(int argc, const char **argv);
 void rev_list_finish(struct rev_info *revs);
 int maybe_boundary(struct rev_info *revs, struct commit *commit);
+const struct commit *commit_list_item(const struct commit_list *list);
+const struct commit_list *commit_list_next(const struct commit_list *list);
 
 struct diff_tree_item;
 

@@ -3,26 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::io::{self, Write};
-use std::num::ParseIntError;
+use std::fmt;
+use std::marker::PhantomData;
+use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::str::FromStr;
 use std::sync::RwLock;
-use std::{fmt, mem};
+use std::time::{Duration, Instant};
 
 use bstr::ByteSlice;
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
-use derive_more::Deref;
-use getset::{CopyGetters, Getters};
-use hex_literal::hex;
 use itertools::{EitherOrBoth, Itertools};
 
-use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
+use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
-use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
+use crate::util::{CStrExt, DurationExt, ImmutBString, OptionExt, OsStrExt, Transpose};
+use crate::{check_enabled, experiment_similarity, logging, Checks};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -108,17 +108,6 @@ impl strbuf {
     }
 }
 
-impl Write for strbuf {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 impl Drop for strbuf {
     fn drop(&mut self) {
         unsafe {
@@ -135,7 +124,7 @@ macro_rules! die {
 pub(crate) use die;
 
 extern "C" {
-    pub fn credential_fill(auth: *mut credential);
+    pub fn credential_fill(auth: *mut credential, all_capabilities: c_int);
 
     pub static mut http_auth: credential;
 
@@ -152,20 +141,16 @@ extern "C" {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct credential(c_void);
+#[repr(C)]
+pub struct credential([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct remote(c_void);
+#[repr(C)]
+pub struct remote([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct child_process(c_void);
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct object_entry(c_void);
+#[repr(C)]
+pub struct object_entry([u8; 0]);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -239,7 +224,7 @@ pub struct object_info {
     disk_sizep: *mut u64,
     delta_base_oid: *mut object_id,
     type_name: *mut strbuf,
-    contentp: *mut *const c_void,
+    contentp: *mut *mut c_void,
     whence: c_int, // In reality, it's an inline enum.
     // In reality, following is a union with one struct.
     u_packed_pack: *mut c_void, // packed_git.
@@ -273,158 +258,99 @@ extern "C" {
     ) -> c_int;
 }
 
-pub struct RawObject {
-    buf: *const c_void,
-    len: usize,
+pub struct FfiBox<T: ?Sized> {
+    ptr: NonNull<T>,
+    marker: PhantomData<T>,
 }
 
-impl RawObject {
-    fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
-        let mut info = object_info::default();
-        let mut t = object_type::OBJ_NONE;
-        let mut len: c_ulong = 0;
-        let mut buf = std::ptr::null();
-        info.typep = &mut t;
-        info.sizep = &mut len;
-        info.contentp = &mut buf;
-        (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0).then(
-            || {
-                let raw = RawObject {
-                    buf,
-                    len: len.try_into().unwrap(),
-                };
-                (t, raw)
-            },
-        )
-    }
-
-    fn get_type<O: Into<GitObjectId>>(oid: O) -> Option<object_type> {
-        let mut info = object_info::default();
-        let mut t = object_type::OBJ_NONE;
-        info.typep = &mut t;
-        (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
-            .then_some(t)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+impl<T: ?Sized> FfiBox<T> {
+    pub unsafe fn from_raw(raw: *mut T) -> FfiBox<T> {
+        FfiBox {
+            ptr: NonNull::new(raw).unwrap(),
+            marker: PhantomData,
+        }
     }
 }
 
-impl Clone for RawObject {
+impl<T> FfiBox<[T]> {
+    pub unsafe fn from_raw_parts(raw: *mut T, len: usize) -> FfiBox<[T]> {
+        FfiBox {
+            ptr: NonNull::slice_from_raw_parts(NonNull::new(raw).unwrap(), len),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> Deref for FfiBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: ?Sized> DerefMut for FfiBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl Clone for FfiBox<[u8]> {
     fn clone(&self) -> Self {
         let mut cloned = strbuf::new();
         cloned.extend_from_slice(self.as_bytes());
-        let buf = cloned.as_ptr() as *const _;
+        let buf = cloned.as_ptr() as *mut _;
         let len = cloned.as_bytes().len();
         mem::forget(cloned);
-        RawObject { buf, len }
+        unsafe { FfiBox::from_raw_parts(buf, len) }
     }
 }
 
-impl Drop for RawObject {
+impl<T: ?Sized> Drop for FfiBox<T> {
     fn drop(&mut self) {
         unsafe {
-            libc::free(self.buf as *mut _);
+            libc::free(self.ptr.cast().as_ptr());
         }
     }
 }
 
-macro_rules! raw_object {
-    ($t:ident | $oid_type:ident => $name:ident) => {
-        #[derive(Deref, Clone)]
-        pub struct $name(RawObject);
-
-        impl $name {
-            pub fn read(oid: $oid_type) -> Option<Self> {
-                match RawObject::read(oid.into())? {
-                    (object_type::$t, o) => Some($name(o)),
-                    _ => None,
-                }
-            }
-        }
-
-        impl TryFrom<GitObjectId> for $oid_type {
-            type Error = ();
-            fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
-                match RawObject::get_type(oid).ok_or(())? {
-                    object_type::$t => Ok($oid_type::from_unchecked(oid)),
-                    _ => Err(()),
-                }
-            }
-        }
-    };
-}
-
-raw_object!(OBJ_COMMIT | CommitId => RawCommit);
-raw_object!(OBJ_TREE | TreeId => RawTree);
-raw_object!(OBJ_BLOB | BlobId => RawBlob);
-
-impl RawBlob {
-    pub const EMPTY_OID: BlobId =
-        BlobId::from_raw_bytes_array(hex!("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"));
-}
-
-impl RawTree {
-    pub const EMPTY_OID: TreeId =
-        TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
-
-    pub const EMPTY: RawTree = RawTree(RawObject {
-        buf: std::ptr::null(),
-        len: 0,
-    });
-}
-
-#[derive(CopyGetters, Getters)]
-pub struct Commit<'a> {
-    #[getset(get_copy = "pub")]
-    tree: TreeId,
-    parents: Vec<CommitId>,
-    #[getset(get_copy = "pub")]
-    author: &'a [u8],
-    #[getset(get_copy = "pub")]
-    committer: &'a [u8],
-    #[getset(get_copy = "pub")]
-    body: &'a [u8],
-}
-
-impl<'a> Commit<'a> {
-    pub fn parents(&self) -> &[CommitId] {
-        &self.parents[..]
+impl From<strbuf> for FfiBox<[u8]> {
+    fn from(value: strbuf) -> Self {
+        let ptr = value.buf as *mut _;
+        let len = value.len;
+        mem::forget(value);
+        unsafe { FfiBox::from_raw_parts(ptr, len) }
     }
 }
 
-impl RawCommit {
-    pub fn parse(&self) -> Option<Commit> {
-        let [header, body] = self.as_bytes().splitn_exact(&b"\n\n"[..])?;
-        let mut tree = None;
-        let mut parents = Vec::new();
-        let mut author = None;
-        let mut committer = None;
-        for line in header.lines() {
-            if line.is_empty() {
-                break;
-            }
-            match line.splitn_exact(b' ')? {
-                [b"tree", t] => tree = Some(TreeId::from_bytes(t).ok()?),
-                [b"parent", p] => parents.push(CommitId::from_bytes(p).ok()?),
-                [b"author", a] => author = Some(a),
-                [b"committer", a] => committer = Some(a),
-                _ => {}
-            }
-        }
-        Some(Commit {
-            tree: tree?,
-            parents,
-            author: author?,
-            committer: committer?,
-            body,
+pub fn git_object_info(
+    oid: impl Into<GitObjectId>,
+    with_content: bool,
+) -> Option<(object_type, Option<FfiBox<[u8]>>)> {
+    let mut info = object_info::default();
+    let mut t = object_type::OBJ_NONE;
+    let mut len: c_ulong = 0;
+    let mut buf = std::ptr::null_mut();
+    info.typep = &mut t;
+    if with_content {
+        info.sizep = &mut len;
+        info.contentp = &mut buf;
+    }
+    (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
+        .then(|| {
+            (
+                t,
+                with_content.then(|| unsafe {
+                    FfiBox::from_raw_parts(buf as *mut _, len.try_into().unwrap())
+                }),
+            )
         })
-    }
 }
 
 extern "C" {
     pub static mut the_repository: *mut repository;
+
+    pub static local_repo_env: [*const c_char; 1];
 
     static default_abbrev: c_int;
 
@@ -492,59 +418,15 @@ pub fn lookup_replace_commit(c: CommitId) -> CommitId {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct string_list {
-    items: *const string_list_item,
-    nr: c_uint,
-    /* there are more but we don't use them */
-}
+pub struct rev_info([u8; 0]);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-struct string_list_item {
-    string: *const c_char,
-    util: *const c_void,
-}
+pub struct commit([u8; 0]);
 
 #[allow(non_camel_case_types)]
-pub struct string_list_iter<'a> {
-    list: &'a string_list,
-    next: Option<c_uint>,
-}
-
-impl string_list {
-    pub fn is_empty(&self) -> bool {
-        self.nr == 0
-    }
-
-    pub fn iter(&self) -> string_list_iter {
-        string_list_iter {
-            list: self,
-            next: Some(0),
-        }
-    }
-}
-
-impl<'a> Iterator for string_list_iter<'a> {
-    type Item = &'a [u8];
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = self.next.take()?;
-        let result = unsafe { self.list.items.offset(i as isize).as_ref()? };
-        self.next = i.checked_add(1).filter(|&x| x < self.list.nr);
-        Some(unsafe { CStr::from_ptr(result.string) }.to_bytes())
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct rev_info(c_void);
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct commit(c_void);
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct commit_list(c_void);
+#[repr(C)]
+pub struct commit_list([u8; 0]);
 
 extern "C" {
     pub fn commit_oid(c: *const commit) -> *const object_id;
@@ -556,28 +438,82 @@ extern "C" {
     fn rev_list_finish(revs: *mut rev_info);
 
     fn maybe_boundary(revs: *const rev_info, c: *const commit) -> c_int;
+
+    fn get_saved_parents(revs: *mut rev_info, c: *const commit) -> *const commit_list;
 }
 
 pub struct RevList {
     revs: *mut rev_info,
+    duration: Option<(Duration, Duration)>,
 }
 
 pub fn rev_list(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> RevList {
+    let log_level = logging::max_log_level("rev-list", log::Level::Debug).to_level();
+    let start = (check_enabled(Checks::TIME) && log_level.is_some()).then(Instant::now);
     let args: Vec<_> = Some(OsStr::new("").to_cstring())
         .into_iter()
         .chain(args.into_iter().map(|a| a.as_ref().to_cstring()))
         .collect();
+    if let Some(log_level) = log_level {
+        let mut data = String::new();
+        let mut commits = 0;
+        let mut substracted_commits = 0;
+
+        let maybe_add_commits = |data: &mut String, commits: usize, substracted_commits: usize| {
+            if !data.is_empty() {
+                data.push(' ');
+            }
+            for (commits, name) in [
+                (commits, "commit"),
+                (substracted_commits, "substracted commit"),
+            ] {
+                if commits > 0 {
+                    data.push('[');
+                    data.push_str(&commits.to_string());
+                    data.push(' ');
+                    data.push_str(name);
+                    if commits > 1 {
+                        data.push('s');
+                    }
+                    data.push(']');
+                }
+            }
+        };
+        for arg in args.iter().skip(1) {
+            if arg.as_bytes().starts_with(b"-") || log_level == log::Level::Trace {
+                maybe_add_commits(&mut data, commits, substracted_commits);
+                if !data.is_empty() {
+                    data.push(' ');
+                }
+                data.push_str(&arg.to_string_lossy());
+                commits = 0;
+                substracted_commits = 0;
+            } else if arg.as_bytes().starts_with(b"^") {
+                substracted_commits += 1;
+            } else {
+                commits += 1;
+            }
+        }
+        maybe_add_commits(&mut data, commits, substracted_commits);
+        log!(target: "rev-list", log_level, "{}", data);
+    }
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
     RevList {
         revs: unsafe { rev_list_new(args.len().try_into().unwrap(), &argv[0]) },
+        duration: start.map(|start| (start.elapsed(), Duration::ZERO)),
     }
 }
 
 impl Drop for RevList {
     fn drop(&mut self) {
+        let start = self.duration.is_some().then(Instant::now);
         unsafe {
             rev_list_finish(self.revs);
+        }
+        if let Some(((init_duration, duration), start)) = self.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
+            debug!(target: "rev-list", "{} elapsed initially, then {}.", init_duration.fuzzy_display(), duration.fuzzy_display());
         }
     }
 }
@@ -585,11 +521,16 @@ impl Drop for RevList {
 impl Iterator for RevList {
     type Item = CommitId;
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
+        let start = self.duration.is_some().then(Instant::now);
+        let result = unsafe {
             get_revision(self.revs).as_ref().map(|c| {
                 CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
             })
+        };
+        if let Some(((_, duration), start)) = self.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
         }
+        result
     }
 }
 
@@ -606,28 +547,83 @@ pub fn rev_list_with_boundaries(
     RevListWithBoundaries(rev_list(args))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MaybeBoundary {
-    Commit(CommitId),
-    Boundary(CommitId),
+    Commit,
+    Boundary,
     Shallow,
 }
 
 impl Iterator for RevListWithBoundaries {
-    type Item = MaybeBoundary;
+    type Item = (CommitId, MaybeBoundary);
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
+        let start = self.0.duration.is_some().then(Instant::now);
+        let result = unsafe {
             get_revision(self.0.revs).as_ref().map(|c| {
                 let cid = CommitId::from_unchecked(GitObjectId::from(
                     commit_oid(c).as_ref().unwrap().clone(),
                 ));
-                match maybe_boundary(self.0.revs, c) {
-                    0 => MaybeBoundary::Commit(cid),
-                    1 => MaybeBoundary::Boundary(cid),
+                let maybe_boundary = match maybe_boundary(self.0.revs, c) {
+                    0 => MaybeBoundary::Commit,
+                    1 => MaybeBoundary::Boundary,
                     2 => MaybeBoundary::Shallow,
                     _ => unreachable!(),
-                }
+                };
+                (cid, maybe_boundary)
             })
+        };
+        if let Some(((_, duration), start)) = self.0.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
         }
+        result
+    }
+}
+
+pub struct RevListWithParents(RevList);
+
+pub fn rev_list_with_parents(
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> RevListWithParents {
+    let args = args.into_iter().collect_vec();
+    let args = args
+        .iter()
+        .map(AsRef::as_ref)
+        .chain([OsStr::new("--parents")]);
+    RevListWithParents(rev_list(args))
+}
+
+impl Iterator for RevListWithParents {
+    type Item = (CommitId, Box<[CommitId]>);
+    fn next(&mut self) -> Option<Self::Item> {
+        let start = self.0.duration.is_some().then(Instant::now);
+        let result = unsafe {
+            get_revision(self.0.revs).as_ref().map(|c| {
+                let mut parents_commit_list = get_saved_parents(self.0.revs, c);
+                let mut parents = Vec::new();
+                loop {
+                    if parents_commit_list.is_null() {
+                        break;
+                    }
+                    parents.push(CommitId::from_unchecked(GitObjectId::from(
+                        commit_oid(commit_list_item(parents_commit_list))
+                            .as_ref()
+                            .unwrap()
+                            .clone(),
+                    )));
+                    parents_commit_list = commit_list_next(parents_commit_list);
+                }
+                (
+                    CommitId::from_unchecked(GitObjectId::from(
+                        commit_oid(c).as_ref().unwrap().clone(),
+                    )),
+                    parents.into(),
+                )
+            })
+        };
+        if let Some(((_, duration), start)) = self.0.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
+        }
+        result
     }
 }
 
@@ -679,11 +675,9 @@ impl From<FileMode> for u16 {
     }
 }
 
-impl FromBytes for FileMode {
-    type Err = ParseIntError;
-
-    fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
-        u16::from_str_radix(std::str::from_utf8(b).unwrap(), 8).map(FileMode)
+impl From<u16> for FileMode {
+    fn from(value: u16) -> Self {
+        FileMode(value)
     }
 }
 
@@ -828,7 +822,7 @@ pub fn diff_tree_with_copies(
         &b,
         cstr!("--ignore-submodules=dirty"),
         cstr!("-C"),
-        cstr!("-C100%"),
+        experiment_similarity(),
         cstr!("--"),
     ];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
@@ -857,8 +851,15 @@ extern "C" {
 
 impl remote {
     pub fn get(name: &OsStr) -> &'static mut remote {
-        // /!\ This potentially leaks memory.
-        unsafe { remote_get(name.to_cstring().into_raw()).as_mut().unwrap() }
+        let mut remote_name = strbuf::new();
+        remote_name.extend_from_slice(name.as_bytes());
+        let result = unsafe { remote_get(remote_name.as_ptr()).as_mut().unwrap() };
+        if (result.get_url() as *const OsStr as *const c_char) == remote_name.as_ptr() {
+            // In some cases remote_get takes ownership of the name given, if it's an url.
+            // But only the first time for a give url. When that happens, we want to leak it.
+            std::mem::forget(remote_name);
+        }
+        result
     }
 
     pub fn name(&self) -> Option<&OsStr> {
@@ -924,15 +925,21 @@ pub fn for_each_remote<E, F: FnMut(&remote) -> Result<(), E>>(f: F) -> Result<()
     }
 }
 
-mod refs {
-    use super::*;
-    extern "C" {
-        pub fn for_each_ref_in(
-            prefix: *const c_char,
-            cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
-            cb_data: *mut c_void,
-        ) -> c_int;
-    }
+extern "C" {
+    pub fn get_main_ref_store(r: *mut repository) -> *mut ref_store;
+
+    pub fn refs_for_each_ref_in(
+        refs: *const ref_store,
+        prefix: *const c_char,
+        cb: unsafe extern "C" fn(
+            *const c_char,
+            *const c_char,
+            *const object_id,
+            c_int,
+            *mut c_void,
+        ) -> c_int,
+        cb_data: *mut c_void,
+    ) -> c_int;
 }
 
 static REFS_LOCK: RwLock<()> = RwLock::new(());
@@ -947,6 +954,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
 
     unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
         refname: *const c_char,
+        _referent: *const c_char,
         oid: *const object_id,
         _flags: c_int,
         cb_data: *mut c_void,
@@ -969,7 +977,8 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
     }
 
     unsafe {
-        if 0 == refs::for_each_ref_in(
+        if 0 == refs_for_each_ref_in(
+            get_main_ref_store(the_repository),
             prefix.as_ptr(),
             each_ref_cb::<E, F>,
             &mut cb_data as *mut (F, Option<E>) as *mut c_void,
@@ -982,14 +991,19 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
 }
 
 extern "C" {
-    fn read_ref(refname: *const c_char, oid: *mut object_id) -> c_int;
+    fn refs_read_ref(refs: *const ref_store, refname: *const c_char, oid: *mut object_id) -> c_int;
 }
 
 pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut oid = object_id::default();
     unsafe {
-        if read_ref(refname.as_ref().to_cstring().as_ptr(), &mut oid) == 0 {
+        if refs_read_ref(
+            get_main_ref_store(the_repository),
+            refname.as_ref().to_cstring().as_ptr(),
+            &mut oid,
+        ) == 0
+        {
             // We ignore tags. See comment in for_each_ref_in.
             CommitId::try_from(GitObjectId::from(oid)).ok()
         } else {
@@ -999,18 +1013,17 @@ pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct ref_transaction(c_void);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct ref_store(c_void);
 
 extern "C" {
-    fn ref_transaction_begin(err: *mut strbuf) -> *mut ref_transaction;
-
     fn ref_store_transaction_begin(
         refs: *const ref_store,
+        flags: c_uint,
         err: *mut strbuf,
     ) -> *mut ref_transaction;
 
@@ -1021,6 +1034,8 @@ extern "C" {
         refname: *const c_char,
         new_oid: *const object_id,
         old_oid: *const object_id,
+        new_target: *const c_char,
+        old_target: *const c_char,
         flags: c_uint,
         msg: *const c_char,
         err: *mut strbuf,
@@ -1030,6 +1045,7 @@ extern "C" {
         tr: *mut ref_transaction,
         refname: *const c_char,
         old_oid: *const object_id,
+        old_target: *const c_char,
         flags: c_uint,
         msg: *const c_char,
         err: *mut strbuf,
@@ -1047,17 +1063,13 @@ pub struct RefTransaction {
 
 impl RefTransaction {
     pub fn new() -> Option<Self> {
-        let mut err = strbuf::new();
-        Some(RefTransaction {
-            tr: unsafe { ref_transaction_begin(&mut err).as_mut()? },
-            err,
-        })
+        Self::new_with_ref_store(unsafe { get_main_ref_store(the_repository).as_ref().unwrap() })
     }
 
     pub fn new_with_ref_store(refs: &ref_store) -> Option<Self> {
         let mut err = strbuf::new();
         Some(RefTransaction {
-            tr: unsafe { ref_store_transaction_begin(refs, &mut err).as_mut()? },
+            tr: unsafe { ref_store_transaction_begin(refs, 0, &mut err).as_mut()? },
             err,
         })
     }
@@ -1100,6 +1112,8 @@ impl RefTransaction {
                 refname.as_ref().to_cstring().as_ptr(),
                 &new_oid.into(),
                 old_oid.map(object_id::from).as_ref().as_ptr(),
+                ptr::null(),
+                ptr::null(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,
@@ -1126,6 +1140,7 @@ impl RefTransaction {
                 self.tr,
                 refname.as_ref().to_cstring().as_ptr(),
                 old_oid.map(object_id::from).as_ref().as_ptr(),
+                ptr::null(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,
@@ -1155,23 +1170,18 @@ impl Drop for RefTransaction {
 }
 
 extern "C" {
-    fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
-    fn git_config_set(key: *const c_char, value: *const c_char);
+    fn repo_config_get_value(
+        r: *mut repository,
+        key: *const c_char,
+        value: *mut *const c_char,
+    ) -> c_int;
 }
 
 pub fn config_get_value(key: &str) -> Option<OsString> {
     let mut value = std::ptr::null();
     let key = CString::new(key).unwrap();
-    (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
+    (unsafe { repo_config_get_value(the_repository, key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
-}
-
-pub fn config_set_value<S: ToString>(key: &str, value: S) {
-    let key = CString::new(key).unwrap();
-    let value = CString::new(value.to_string()).unwrap();
-    unsafe {
-        git_config_set(key.as_ptr(), value.as_ptr());
-    }
 }
 
 extern "C" {
@@ -1186,6 +1196,10 @@ extern "C" {
     fn commit_list_count(l: *const commit_list) -> c_uint;
 
     fn free_commit_list(list: *mut commit_list);
+
+    fn commit_list_next(list: *const commit_list) -> *const commit_list;
+
+    fn commit_list_item(list: *const commit_list) -> *const commit;
 
     pub fn lookup_commit(r: *mut repository, oid: *const object_id) -> *const commit;
 }
@@ -1290,4 +1304,27 @@ impl notes_tree {
     pub const fn dirty(&self) -> bool {
         self.dirty != 0
     }
+}
+
+mod ident {
+    use std::os::raw::{c_char, c_int};
+
+    extern "C" {
+        pub fn git_committer_info(flag: c_int) -> *const c_char;
+        pub fn git_author_info(flag: c_int) -> *const c_char;
+    }
+}
+
+pub fn git_committer_info() -> ImmutBString {
+    unsafe { CStr::from_ptr(ident::git_committer_info(0).as_ref().unwrap()) }
+        .to_bytes()
+        .to_vec()
+        .into()
+}
+
+pub fn git_author_info() -> ImmutBString {
+    unsafe { CStr::from_ptr(ident::git_author_info(0).as_ref().unwrap()) }
+        .to_bytes()
+        .to_vec()
+        .into()
 }

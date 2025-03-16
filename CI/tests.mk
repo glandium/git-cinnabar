@@ -90,7 +90,8 @@ check-graft: hg.graft.cinnabar.git
 
 hg.hg hg.hg.nobundle2: hg.upgraded.git
 	$(call HG_INIT, $@)
-	$(GIT) -c cinnabar.data=never -C $< push hg::$(PATH_URL)/$@ 'refs/remotes/origin/*:refs/heads/*'
+	cp -r $< $@.tmp
+	$(GIT) -c cinnabar.data=never -C $@.tmp push hg::$(PATH_URL)/$@ 'refs/remotes/origin/*:refs/heads/*'
 	$(HG) -R $@ verify
 
 hg.empty.hg:
@@ -101,10 +102,12 @@ hg.empty.git: hg.empty.hg
 
 hg.empty.push.hg: hg.empty.git
 	$(call HG_INIT, $@)
-	$(GIT) -c cinnabar.data=never -C $< push --all hg::$(PATH_URL)/$@
+	cp -r $< $@.tmp
+	$(GIT) -c cinnabar.data=never -C $@.tmp push --all hg::$(PATH_URL)/$@
 
 hg.bundle: hg.git
-	$(GIT) -C $< cinnabar bundle $(CURDIR)/$@ -- --remotes
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp cinnabar bundle $(CURDIR)/$@ -- --remotes
 
 hg.git hg.git.nobundle2: hg.git%: hg.hg% hg.upgraded.git
 hg.unbundle.git: hg.bundle hg.git
@@ -168,8 +171,9 @@ hg.pure.git: hg.git
 hg.push.hg hg.push.hg.nobundle2: GIT_CINNABAR_EXPERIMENTS:=$(GIT_CINNABAR_EXPERIMENTS:%=%,)merge
 hg.push.hg hg.push.hg.nobundle2: hg.pure.git
 	$(call HG_INIT, $@)
+	cp -r $< $@.tmp
 	# Push everything, including merges
-	$(GIT) -c cinnabar.data=never -C $< push hg::$(PATH_URL)/$@ --all
+	$(GIT) -c cinnabar.data=never -C $@.tmp push hg::$(PATH_URL)/$@ --all
 
 hg.http.hg hg.http.hg.gitcredentials: NUM=05
 hg.http.hg.nobundle2 hg.http.hg.nobundle2.gitcredentials: NUM=06
@@ -179,7 +183,8 @@ hg.http.hg.gitcredentials hg.http.hg.nobundle2.gitcredentials:
 
 hg.http.hg hg.http.hg.nobundle2: %: %.gitcredentials hg.git
 	$(call HG_INIT, $@)
-	$(HG) -R $@ --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
+	$(HG) -R $@ --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='!touch $(CURDIR)/$<.used' -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
+	rm $(CURDIR)/$<.used
 
 hg.incr.base.git: hg.incr.hg
 	$(HG) clone -U $< $@.hg
@@ -221,7 +226,7 @@ hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.ci
 hg.cinnabarclone-graft-bundle.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	cp -r $(word 3,$^) $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ remote rename origin grafted
 	(echo http://localhost:88$(NUM)/$(word 2,$^); echo http://localhost:88$(NUM)/$(word 4,$^) graft=$$($(GIT) ls-remote $(CURDIR)/$(word 4,$^) refs/cinnabar/replace/* | awk -F/ '{print $$NF}')) | tee $@.hg/.hg/cinnabar.manifest
 	$(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch --progress hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
@@ -235,11 +240,12 @@ XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg
 hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 	$(GIT) init $@
 	$(GIT) -C $@ remote add origin hg::$(PATH_URL)/$(word 2,$^)
-	$(GIT) -C $< push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*
 
 hg.graft.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ fast-export --no-data --all | python3 $(TOPDIR)/CI/filter.py --commits | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
@@ -247,15 +253,16 @@ hg.graft.git: hg.graft.base.git hg.upgraded.git
 
 hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 	cp -r $(word 3,$^) $@
-	$(GIT) -C $< push $(CURDIR)/$@ refs/remotes/origin/*:refs/remotes/new/*
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp push $(CURDIR)/$@ refs/remotes/origin/*:refs/remotes/new/*
 	$(GIT) -C $@ remote set-url origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
-	$(call COMPARE_REFS, $<, $@)
+	$(call COMPARE_REFS, $@.tmp, $@)
 	$(GIT) -C $@ cinnabar fsck --full
 
 hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ fast-export --no-data --full-tree --all | python3 $(TOPDIR)/CI/filter.py --commits --roots | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
@@ -271,6 +278,6 @@ hg.graft.cinnabar.git: hg.upgraded.git hg.pure.hg
 
 hg.cant.graft.git: hg.graft.replace.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) -C $@ update-ref --stdin
 	$(GIT) -C $@ -c cinnabar.graft=true remote update

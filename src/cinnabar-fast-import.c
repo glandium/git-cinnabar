@@ -2,12 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define DISABLE_SIGN_COMPARE_WARNINGS
+#define USE_THE_REPOSITORY_VARIABLE
 #include "git-compat-util.h"
 struct object_id;
 static void start_packfile(void);
 static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "alloc.h"
 #include "dir.h"
+#undef fspathncmp
 #define fspathncmp strncmp
 #include "fast-import.patched.c"
 #include "cinnabar-fast-import.h"
@@ -34,7 +37,9 @@ void cinnabar_unregister_shallow(const struct object_id *oid) {
 		update_shallow = 1;
 }
 
-extern void locked_rollback(void);
+static void rollback(void) {
+	do_cleanup(1);
+}
 
 /* Divert fast-import.c's calls to hashwrite so as to keep a fake pack window
  * on the last written bits, avoiding munmap/mmap cycles from
@@ -47,6 +52,8 @@ void real_hashwrite(struct hashfile *, const void *, unsigned int);
 void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
+	size_t packed_git_window_size =
+		the_repository->settings.packed_git_window_size;
 
 	if (f != pack_file) {
 		real_hashwrite(f, buf, count);
@@ -107,22 +114,19 @@ void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 	}
 }
 
-off_t real_find_pack_entry_one(const unsigned char *sha1,
+off_t real_find_pack_entry_one(const struct object_id *oid,
                                struct packed_git *p);
 
-off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
+off_t find_pack_entry_one(const struct object_id *oid, struct packed_git *p)
 {
 	if (p == pack_data) {
-		struct object_id oid;
 		struct object_entry *oe;
-		hashcpy(oid.hash, sha1);
-		oid.algo = GIT_HASH_SHA1;
-		oe = get_object_entry(&oid);
+		oe = get_object_entry(oid);
 		if (oe)
 			return oe->idx.offset;
 		return 0;
 	}
-	return real_find_pack_entry_one(sha1, p);
+	return real_find_pack_entry_one(oid, p);
 }
 
 struct object_entry *get_object_entry(const struct object_id *oid)
@@ -136,7 +140,7 @@ struct object_entry *get_object_entry(const struct object_id *oid)
 /* Mostly copied from fast-import.c's cmd_main() */
 static void init(void)
 {
-	int i;
+	unsigned int i;
 
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
@@ -162,7 +166,7 @@ static void init(void)
 
 	parse_one_feature("force", 0);
 	initialized = 1;
-	atexit(locked_rollback);
+	atexit(rollback);
 }
 
 static void cleanup(void)
@@ -191,7 +195,7 @@ static void cleanup(void)
 	initialized = 0;
 
 	if (cinnabar_check(CHECK_HELPER))
-		pack_report();
+		pack_report(the_repository);
 }
 
 void do_cleanup(int rollback)
@@ -254,9 +258,6 @@ static void end_packfile(void)
 	real_end_packfile();
 }
 
-extern void handle_changeset_conflict(const struct hg_object_id *hg_id,
-                                      struct object_id *git_id);
-
 void do_set_replace(const struct object_id *replaced,
                     const struct object_id *replace_with)
 {
@@ -276,7 +277,8 @@ void do_set_replace(const struct object_id *replaced,
 }
 
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
-                            struct object_id *oid, unsigned flags)
+                            struct object_id *oid, struct object_id *compat_oid_in UNUSED,
+                            unsigned flags UNUSED)
 {
 	struct strslice data;
 	data.buf = (void *)buf;
@@ -320,7 +322,7 @@ static int split_manifest_line(struct strslice *slice,
        return 0;
 }
 
-static int add_parent(struct Metadata *metadata, struct strbuf *data,
+static int add_parent(struct Store *store, struct strbuf *data,
                       const struct hg_object_id *last_manifest_oid,
                       const struct branch *last_manifest,
                       const struct hg_object_id *parent_oid)
@@ -330,7 +332,7 @@ static int add_parent(struct Metadata *metadata, struct strbuf *data,
 		if (hg_oideq(parent_oid, last_manifest_oid))
 			note = &last_manifest->oid;
 		else {
-			note = resolve_hg2git(metadata, parent_oid);
+			note = resolve_hg2git(store, parent_oid);
 		}
 		if (!note)
 			return -1;
@@ -355,17 +357,17 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-extern void add_hg2git(struct Metadata *metadata,
+extern void add_hg2git(struct Store *store,
                        const struct hg_object_id *oid,
                        const struct object_id *note_oid);
 
-extern void add_manifest_head(struct Metadata *metadata,
+extern void add_manifest_head(struct Store *store,
                               const struct object_id *manifest);
 
 extern int check_manifest(const struct object_id *oid);
 
 
-void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
+void store_manifest(struct Store *store, struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut stored_manifest)
 {
@@ -389,14 +391,16 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 				last_manifest->branch_tree.tree);
 			last_manifest->branch_tree.tree = NULL;
 		}
-		oidclr(&last_manifest->branch_tree.versions[0].oid);
-		oidclr(&last_manifest->branch_tree.versions[1].oid);
+		oidclr(&last_manifest->branch_tree.versions[0].oid,
+		       the_repository->hash_algo);
+		oidclr(&last_manifest->branch_tree.versions[1].oid,
+		       the_repository->hash_algo);
 		hg_oidclr(&last_manifest_oid);
-		oidclr(&last_manifest->oid);
+		oidclr(&last_manifest->oid, the_repository->hash_algo);
 		assert(last_manifest_content.len == 0);
 	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
-		note = resolve_hg2git(metadata, chunk->delta_node);
+		note = resolve_hg2git(store, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
 			    hg_oid_to_hex(chunk->delta_node),
@@ -507,9 +511,9 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 	strbuf_addf(&data, "tree %s\n",
 	            oid_to_hex(&last_manifest->branch_tree.versions[1].oid));
 
-	if ((add_parent(metadata, &data, &last_manifest_oid, last_manifest,
+	if ((add_parent(store, &data, &last_manifest_oid, last_manifest,
 	                chunk->parent1) == -1) ||
-	    (add_parent(metadata, &data, &last_manifest_oid, last_manifest,
+	    (add_parent(store, &data, &last_manifest_oid, last_manifest,
 	                chunk->parent2) == -1))
 		goto malformed;
 
@@ -521,8 +525,8 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 	store_git_object(OBJ_COMMIT, strbuf_as_slice(&data),
 	                 &last_manifest->oid, NULL, NULL);
 	strbuf_release(&data);
-	add_hg2git(metadata, &last_manifest_oid, &last_manifest->oid);
-	add_manifest_head(metadata, &last_manifest->oid);
+	add_hg2git(store, &last_manifest_oid, &last_manifest->oid);
+	add_manifest_head(store, &last_manifest->oid);
 	if ((cinnabar_check(CHECK_MANIFESTS)) &&
 	    !check_manifest(&last_manifest->oid))
 		die("sha1 mismatch for node %s", hg_oid_to_hex(chunk->node));
@@ -553,33 +557,11 @@ void store_replace_map(struct object_id *result) {
 	strbuf_release(&buf);
 }
 
-void store_git_tree(struct strslice tree_buf, const struct object_id *reference,
-                    struct object_id *result)
+void unpack_object_entry(struct object_entry *oe, char **buf,
+                         unsigned long *len)
 {
-	struct object_entry *oe = NULL;
-	if (reference) {
-		oe = get_object_entry(reference);
-	}
-	if (oe) {
-		struct strslice ref_tree;
-		unsigned long len;
-		ref_tree.buf = gfi_unpack_entry(oe, &len);
-		ref_tree.len = len;
-		store_git_object(OBJ_TREE, tree_buf, result, &ref_tree, oe);
-		free((char*)ref_tree.buf);
-	} else {
-		store_git_object(OBJ_TREE, tree_buf, result, NULL, NULL);
-	}
-}
-
-void store_git_blob(struct strslice blob_buf, struct object_id *result)
-{
-	store_git_object(OBJ_BLOB, blob_buf, result, NULL, NULL);
-}
-
-void store_git_commit(struct strslice commit_buf, struct object_id *result)
-{
-	store_git_object(OBJ_COMMIT, commit_buf, result, NULL, NULL);
+	// Note: ownership is given out.
+	*buf = gfi_unpack_entry(oe, len);
 }
 
 void store_git_object(enum object_type type, const struct strslice buf,
@@ -599,20 +581,4 @@ void store_git_object(enum object_type type, const struct strslice buf,
 	}
 	ENSURE_INIT();
 	store_object(type, &data, reference ? &ref_object : NULL, result, 0);
-}
-
-const struct object_id empty_blob = { {
-	0xe6, 0x9d, 0xe2, 0x9b, 0xb2, 0xd1, 0xd6, 0x43, 0x4b, 0x8b,
-	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
-}, GIT_HASH_SHA1 };
-
-const struct object_id *ensure_empty_blob(void) {
-	struct object_entry *oe = find_object((struct object_id *)&empty_blob);
-	if (!oe) {
-		struct object_id hash;
-		struct strbuf buf = STRBUF_INIT;
-		store_object(OBJ_BLOB, &buf, NULL, &hash, 0);
-		assert(oidcmp(&hash, &empty_blob) == 0);
-	}
-	return &empty_blob;
 }

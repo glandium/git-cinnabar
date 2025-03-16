@@ -10,9 +10,10 @@ authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
 license = "MPL-2.0 AND GPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
-rust-version = "1.70.0"
+rust-version = "1.75.0"
 include = [
   "/src",
+  "/MPL-2.0",
   "/build.rs",
   "/.cargo",
   "/git-core/COPYING",
@@ -20,6 +21,8 @@ include = [
   "/git-core/Makefile",
   "/git-core/detect-compiler",
   "/git-core/GIT-VERSION-GEN",
+  "/git-core/GIT-VERSION-FILE.in",
+  "/git-core/version-def.h.in",
   "/git-core/*.mak*",
   "/git-core/**/*.c",
   "/git-core/**/*.h",
@@ -27,29 +30,27 @@ include = [
 ]
 
 [dependencies]
-all_asserts = "2"
 array-init = "2.0.1"
 backtrace = "0.3"
-bit-vec = "0.6"
+bit-vec = "0.8"
 bitflags = "2"
-bzip2 = "0.4"
+bzip2 = "0.5"
 byteorder = "1"
 cfg-if = "1"
 cstr = "0.2.10"
-derivative = "2"
 digest = "0.10"
 either = "1"
 getset = "0.1"
-git-version = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
 indexmap = "2"
-itertools = "0.12"
+itertools = "0.14"
 libc = "0.2"
 once_cell = "1.13"
 percent-encoding = "2"
-rand = "0.8"
-sha-1 = "0.10"
+rand = "0.9"
+semver = "1.0"
+sha1 = "0.10"
 tee = "0.1"
 tempfile = "3"
 typenum = "1"
@@ -61,8 +62,12 @@ default-features = false
 features = ["std"]
 
 [dependencies.clap]
-version = "4.0"
+version = "4.2"
 features = ["cargo", "derive"]
+
+[dependencies.concat_const]
+version = "0.1"
+optional = true
 
 [target.'cfg(windows)'.dependencies.curl-sys]
 version = "0.4"
@@ -74,14 +79,18 @@ version = "0.4"
 default-features = false
 
 [dependencies.derive_more]
-version = "0.99"
+version = "2"
 default-features = false
-features = ["deref", "from", "try_into"]
+features = ["deref", "display", "debug", "from", "try_into"]
 
 [dependencies.flate2]
 version = "1"
 default-features = false
 features = ["zlib"]
+
+[dependencies.git-version]
+version = "0.3"
+optional = true
 
 [target.'cfg(windows)'.dependencies.libz-sys]
 version = "1"
@@ -95,17 +104,17 @@ version = "0.4"
 features = ["std"]
 
 [dependencies.lru]
-version = "0.12"
+version = "0.13"
 default-features = false
+
+[dependencies.mio]
+version = "1"
+features = ["os-ext", "os-poll"]
 
 [dependencies.regex]
 version = "1"
 default-features = false
 features = ["std"]
-
-[dependencies.semver]
-version = "1.0"
-optional = true
 
 [dependencies.shared_child]
 version = "1.0"
@@ -116,7 +125,7 @@ version = "0.4"
 optional = true
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.48"
+version = "0.59"
 features = ["Win32_Foundation"]
 
 [target.'cfg(not(windows))'.dependencies.xz2]
@@ -124,7 +133,7 @@ version = "0.1"
 optional = true
 
 [target.'cfg(windows)'.dependencies.zip]
-version = "0.6"
+version = "2"
 default-features = false
 features = ["deflate-zlib"]
 optional = true
@@ -135,10 +144,10 @@ default-features = false
 
 [build-dependencies]
 cc = "1.0.46"
-itertools = "0.12"
+itertools = "0.14"
 make-cmd = "0.1"
 target = "2.0"
-syn = { version = "1", features = ["full"] }  # git-version fails to parse inner macros without this.
+syn = { version = "2", features = ["full"] }  # git-version fails to parse inner macros without this.
 
 [build-dependencies.rustflags]
 version = "0.1"
@@ -155,13 +164,14 @@ panic = "abort"
 panic = "abort"
 
 [features]
-default = ["version-check"]
+default = ["full-version", "version-check"]
+full-version = ["dep:concat_const", "dep:git-version"]
 # libcurl.so compatibility (Linux only).
 curl-compat = ["rustflags"]
 # Check and report when a new version is available.
-version-check = ["semver", "shared_child"]
+version-check = ["shared_child"]
 # Download and apply new versions.
-self-update = ["semver", "shared_child", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
+self-update = ["shared_child", "dep:concat_const", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
 
 # Development features
 

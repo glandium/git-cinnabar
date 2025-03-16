@@ -3,19 +3,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::os::raw::c_uint;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use bstr::ByteSlice;
+use either::Either;
+use url::Url;
 
 use crate::cinnabar::GitChangesetId;
-use crate::git::{CommitId, TreeId};
+use crate::git::{CommitId, RawCommit, TreeId};
+use crate::graft_config_enabled;
 use crate::hg::HgChangesetId;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
-use crate::libgit::{lookup_replace_commit, rev_list, RawCommit};
-use crate::progress::Progress;
-use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset};
+use crate::libcinnabar::reset_ref_store;
+use crate::libgit::{lookup_replace_commit, rev_list, the_repository};
+use crate::progress::{progress_enabled, Progress};
+use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset, Store};
 
 extern "C" {
     fn replace_map_size() -> c_uint;
@@ -38,17 +44,50 @@ pub fn graft_finish() -> Option<bool> {
     }
 }
 
-pub fn init_graft() {
-    let mut args = vec![
-        "--full-history",
-        "--exclude=refs/cinnabar/*",
-        "--exclude=refs/notes/cinnabar",
-        "--exclude=refs/original/*",
-        "--all",
-    ];
-    if has_metadata() {
-        args.push("--not");
-        args.push("refs/cinnabar/metadata^");
+pub fn maybe_init_graft(store: &Store, remote: Option<&str>) -> Result<(), String> {
+    match graft_config_enabled(remote)? {
+        Some(Either::Left(false)) | None => {}
+        Some(Either::Left(true)) => init_graft(store, false),
+        Some(Either::Right(url)) => fetch_graft(url),
+    }
+    Ok(())
+}
+
+fn fetch_graft(url: Url) {
+    eprintln!("Fetching from {}", url);
+    let mut command = Command::new("git");
+    command
+        .arg("fetch")
+        .arg("--no-tags")
+        .arg("--no-recurse-submodules");
+    if progress_enabled() {
+        command.arg("--progress");
+    } else {
+        command.arg("--no-progress");
+    }
+    command.arg(OsStr::new(url.as_ref()));
+    command.arg("refs/heads/*:refs/cinnabar/graft/*");
+    command.status().unwrap();
+    unsafe {
+        reset_ref_store(the_repository);
+    }
+}
+
+pub fn init_graft(store: &Store, fetched: bool) {
+    let mut args = vec!["--full-history"];
+    if fetched {
+        args.push("--glob=refs/cinnabar/graft/*");
+    } else {
+        args.extend([
+            "--exclude=refs/cinnabar/*",
+            "--exclude=refs/notes/cinnabar",
+            "--exclude=refs/original/*",
+            "--all",
+        ]);
+        if has_metadata(store) {
+            args.push("--not");
+            args.push("refs/cinnabar/metadata^");
+        }
     }
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
@@ -66,6 +105,7 @@ pub enum GraftError {
 }
 
 pub fn graft(
+    store: &Store,
     changeset_id: HgChangesetId,
     raw_changeset: &RawHgChangeset,
     tree: TreeId,
@@ -137,7 +177,7 @@ pub fn graft(
     // on a repo that was already handled by cinnabar.
     if candidates.len() > 1 {
         candidates.retain(|(_, c)| {
-            GeneratedGitChangesetMetadata::generate(c, changeset_id, raw_changeset)
+            GeneratedGitChangesetMetadata::generate(store, c, changeset_id, raw_changeset)
                 .unwrap()
                 .patch()
                 .is_some()

@@ -4,4 +4,13 @@
 
 use super::{git_oid_type, GitObjectId};
 
+use hex_literal::hex;
+
 git_oid_type!(BlobId(GitObjectId));
+
+super::raw_object!(OBJ_BLOB | BlobId => RawBlob);
+
+impl RawBlob {
+    pub const EMPTY_OID: BlobId =
+        BlobId::from_raw_bytes_array(hex!("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"));
+}

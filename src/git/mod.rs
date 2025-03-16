@@ -127,3 +127,37 @@ impl PartialEq<GitOid> for GitObjectId {
         GitObjectId::from(*other) == *self
     }
 }
+
+macro_rules! raw_object {
+    ($t:ident | $oid_type:ident => $name:ident) => {
+        #[derive(Clone)]
+        pub struct $name(Option<$crate::libgit::FfiBox<[u8]>>);
+
+        impl $name {
+            pub fn read(oid: $oid_type) -> Option<Self> {
+                $crate::libgit::git_object_info(oid, true).and_then(|(t, content)| {
+                    matches!(t, $crate::libgit::object_type::$t)
+                        .then(|| $name(Some(content.unwrap())))
+                })
+            }
+
+            pub fn as_bytes(&self) -> &[u8] {
+                self.0.as_deref().unwrap_or(&[])
+            }
+        }
+
+        impl TryFrom<GitObjectId> for $oid_type {
+            type Error = ();
+            fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
+                $crate::libgit::git_object_info(oid, false)
+                    .and_then(|(t, _)| {
+                        matches!(t, $crate::libgit::object_type::$t)
+                            .then(|| $oid_type::from_unchecked(oid))
+                    })
+                    .ok_or(())
+            }
+        }
+    };
+}
+
+use raw_object;

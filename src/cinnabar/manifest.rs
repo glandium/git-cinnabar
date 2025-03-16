@@ -9,9 +9,9 @@ use std::num::NonZeroUsize;
 use either::Either;
 use lru::LruCache;
 
-use crate::git::{git_oid_type, CommitId, MalformedTree, TreeId, TreeIsh};
+use crate::git::{git_oid_type, CommitId, MalformedTree, RawCommit, RawTree, TreeId, TreeIsh};
 use crate::hg::{HgFileAttr, HgFileId, ManifestEntry};
-use crate::libgit::{die, FileMode, RawCommit, RawTree};
+use crate::libgit::{die, FileMode};
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
 
@@ -64,7 +64,7 @@ impl ManifestTreeCache {
                 self.misses += 1;
                 f()
             })
-            .map(Clone::clone);
+            .cloned();
         if self.queries >= self.lru_cache.cap().get() / 2 {
             let miss_rate = self.misses / (self.queries / 10);
             // Avoid growing the cache when we're flat-lining at 100% miss rate.

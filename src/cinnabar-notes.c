@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define USE_THE_REPOSITORY_VARIABLE
 #include "git-compat-util.h"
 #include "hash.h"
 #include "cinnabar-notes.h"
@@ -16,7 +17,7 @@
 static int abbrev_sha1_cmp(const unsigned char *ref_sha1,
                            const unsigned char *abbrev_sha1, size_t len)
 {
-        int i;
+        size_t i;
 
         for (i = 0; i < len / 2; i++, ref_sha1++, abbrev_sha1++) {
                 if (*ref_sha1 != *abbrev_sha1)
@@ -131,8 +132,7 @@ int cinnabar_remove_note(struct cinnabar_notes_tree *t,
 	int result2 = remove_note(&t->additions, object_sha1);
 	if (!result) {
 		struct object_id oid;
-		hashcpy(oid.hash, object_sha1);
-		oid.algo = GIT_HASH_SHA1;
+		oidread(&oid, object_sha1, the_repository->hash_algo);
 		add_note(&t->additions, &oid, null_oid(), NULL);
 	}
 	return result && result2;
@@ -151,7 +151,7 @@ const struct object_id *cinnabar_get_note(struct cinnabar_notes_tree *t,
 }
 
 static int merge_note(const struct object_id *object_oid,
-                      const struct object_id *note_oid, char *note_path,
+                      const struct object_id *note_oid, char *note_path UNUSED,
                       void *data)
 {
 	struct notes_tree *notes = (struct notes_tree *)data;

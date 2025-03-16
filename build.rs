@@ -75,7 +75,7 @@ fn prepare_make(make: &mut Command) -> &mut Command {
         if chunk.len() == 2 {
             let name = chunk[0].trim_start().trim_end_matches('=');
             let value = chunk[1];
-            result = result.arg(&format!("{}={}", name, value));
+            result = result.arg(format!("{}={}", name, value));
         }
     }
     result.env_remove("PROFILE")
@@ -128,6 +128,7 @@ fn main() {
     cmd.arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
+        .arg("LAZYLOAD_LIBCURL=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
         .arg("NO_REGEX=1")
@@ -137,10 +138,10 @@ fn main() {
         .arg("GENERATED_H=")
         .args(extra_args);
 
-    let compiler = cc::Build::new()
-        .force_frame_pointer(true)
-        .warnings(false)
-        .get_compiler();
+    let mut build = cc::Build::new();
+    build.force_frame_pointer(true).warnings(false);
+    let compiler = build.get_compiler();
+    let ar = build.get_archiver();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),
@@ -177,6 +178,7 @@ fn main() {
     .join(" ");
     cmd.arg(format!("CFLAGS={}", cflags));
     cmd.arg(format!("CC={}", compiler.path().display()));
+    cmd.arg(format!("AR={}", ar.get_program().to_str().unwrap()));
 
     let compile_commands =
         cfg!(feature = "compile_commands") || std::env::var("VSCODE_PID").is_ok();
@@ -305,33 +307,4 @@ fn main() {
     }
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
-
-    #[cfg(any(feature = "version-check", feature = "self-update"))]
-    {
-        // The expected lifecycle is:
-        // - 0.x.0a on branch next
-        // - 0.x.0b on branch master
-        // - 0.x.0b1 on branch release (optionally)
-        // - 0.(x+1).0a on branch next (possibly later)
-        // - 0.x.0rc1 on branch release (optionally)
-        // - 0.x.0 on branch release
-        // - 0.x.1a on branch master
-        // - 0.x.1 on branch release
-        //
-        // Releases will only check tags. Others will check branch heads.
-        let pre = env("CARGO_PKG_VERSION_PRE");
-        let patch = env("CARGO_PKG_VERSION_PATCH");
-        if let "a" | "b" = &*pre {
-            println!("cargo:rustc-cfg=version_check_branch");
-            println!(
-                "cargo:rustc-env=VERSION_CHECK_BRANCH={}",
-                match (&*patch, &*pre) {
-                    ("0", "a") => "next",
-                    ("0", "b") | (_, "a") => "master",
-                    _ => panic!("Unsupported version"),
-                }
-            );
-        }
-        println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
-    }
 }

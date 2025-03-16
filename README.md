@@ -38,8 +38,10 @@ Requirements:
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
 - In order to build from source:
-  - Rust 1.70.0 or newer.
-  - GCC or clang.
+  - Rust 1.75.0 or newer.
+  - A C compiler (GCC or clang).
+  - make.
+  - CURL development headers and libraries (except on Windows). Please note that on MacOS they are included in the SDK.
 
 Setup:
 ------
@@ -48,7 +50,7 @@ Setup:
 
 - Assuming a prebuilt binary is available for your system, get the
   [download.py script](https://raw.githubusercontent.com/glandium/git-cinnabar/master/download.py)
-  and run it (requires python 3.6 or newer) with:
+  and run it (requires python 3.9 or newer) with:
 
   ```
   $ ./download.py
@@ -63,7 +65,7 @@ Setup:
 - Run the following:
 
   ```
-  $ cargo install git-cinnabar
+  $ cargo install --locked git-cinnabar
   $ git cinnabar setup
   ```
 
@@ -147,24 +149,9 @@ scheme for pushes only.
 Tags:
 -----
 
-Because mercurial stores tags in a file in the repository, it is not possible
-for git-cinnabar to know them when git asks for them, except when the
-repository has already been updated. Until version 0.4.0, git-cinnabar would
-try to get tags in a best effort way.
+You can get/update tags with the following command:
 
-Furthermore, the way tags are tracked across branches in mercurial can make it
-awkward when pulling from multiple mercurial repositories. For example, pulling
-tags from mozilla-release, mozilla-beta, and mozilla-esr\* repositories is messy.
-
-So, as of 0.5.0, tags are not associated with mercurial remotes anymore, and one
-needs to setup a separate remote that consolidates all mercurial tags tracked by
-git-cinnabar. That remote can be set like the following:
-
-`$ git remote add tags hg::tags:`
-
-And tags can be updated with, e.g.:
-
-`$ git fetch tags`
+`$ git cinnabar fetch --tags`
 
 Fetching a specific mercurial changeset:
 ----------------------------------------
@@ -209,9 +196,11 @@ preference with one of the following values:
 - `always`
 - `never`
 - `phase`
+- `force`
 
 `phase` is the default described above. `always` and `never` are
-self-explanatory.
+self-explanatory. `force` has the same meaning as `always`, but also
+forces `git push --dry-run` to store metadata.
 
 Cinnabar clone:
 ---------------
@@ -286,13 +275,28 @@ The default protocol is https, and the port can be omitted.
 
 - `hg::tags:` becomes `hg://:tags`
 
+Compatibility:
+--------------
+
+As of version 0.7, some corner cases in Mercurial repositories will generate
+different git commits than with prior versions of git-cinnabar. This means
+a fresh clone might have different git SHA-1s than existing clones, but this
+doesn't impact the use of existing clones with newer versions of git-cinnabar.
+
+Most repositories should remain non-affected by the change.
+
+You can set the `cinnabar.compat` git configuration to `0.6` to keep the
+previous behavior.
+
+
 Experimental features:
 ----------------------
 
 Git-cinnabar has a set of experimental features that can be enabled
 independently. You can set the `cinnabar.experiments` git configuration to a
-comma-separated list of those features to enable the selected ones, or to
-`all` to enable them all. The available features are:
+comma-separated list of those features to enable the selected ones.
+
+The available features are:
 
 - **merge**
 
@@ -304,3 +308,18 @@ comma-separated list of those features to enable the selected ones, or to
   currently doesn’t handle the case where a file was moved on one of the
   branches the same way mercurial would (i.e. the information would be lost to
   mercurial users).
+
+- **similarity**
+
+  Git doesn't track file copies or renames. It however has flags to try to
+  detect them after the fact. On the other hand, Mercurial does track copies
+  and renames, if they're recorded manually in the first place. Git-cinnabar
+  does exact-copy/rename detection when pushing new commits to a Mercurial
+  repository.
+
+  The similarity feature allows to configure how (dis)similar files can be
+  to be detected as a rename or copy. `similarity=100` is the default, which
+  means only 100% identical files are considered. `similarity=90` means 90%
+  identical files, and so on.
+
+  This is equivalent to `git diff -C -C${similarity}%`

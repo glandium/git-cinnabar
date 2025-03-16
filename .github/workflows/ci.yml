@@ -1,0 +1,276 @@
+name: CI
+on:
+  push: []
+  pull_request: []
+  schedule:
+    - cron: '21 7 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options:
+          - more-hg-versions
+          - hg-trunk
+
+env:
+  TC_ACTION: ${{ github.event.inputs.action || 'decision' }}
+
+jobs:
+  decision:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.decision.outputs.matrix }}
+      artifacts: ${{ steps.decision.outputs.artifacts }}
+      mounts: ${{ steps.decision.outputs.mounts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/decision
+        id: decision
+        with:
+          touch-caches-only: ${{ github.event_name == 'schedule' }}
+
+  docker-base:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['docker-base'] && !cancelled() }}
+    needs: decision
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['docker-base'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  docker:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['docker'] && !cancelled() }}
+    needs: [decision, docker-base]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['docker'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  msys2-base:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['msys2-base'] && !cancelled() }}
+    needs: [decision, docker-base]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['msys2-base'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  msys2:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['msys2'] && !cancelled() }}
+    needs: [decision, msys2-base]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['msys2'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  git:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['git'] && !cancelled() }}
+    needs: [decision, docker]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['git'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  hg:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['hg'] && !cancelled() }}
+    needs: [decision, docker, msys2]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['hg'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  macossdk:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['macossdk'] && !cancelled() }}
+    needs: [decision]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['macossdk'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  build:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['build'] && !cancelled() }}
+    needs: [decision, docker, macossdk]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['build'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ fromJSON(needs.decision.outputs.artifacts)[matrix.task].key }}
+          path: ${{ join(fromJSON(needs.decision.outputs.artifacts)[matrix.task].paths, '\n') }}
+
+  cram:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['cram'] && !cancelled() }}
+    needs: [decision, docker, git, hg, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['cram'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  download:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['download'] && !cancelled() }}
+    needs: [decision, docker, git, build, msys2]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['download'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  hg-clone:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['hg-clone'] && !cancelled() }}
+    needs: [decision, docker, hg]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['hg-clone'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  clone:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['clone'] && !cancelled() }}
+    needs: [decision, git, build, hg-clone]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['clone'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  graft:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['graft'] && !cancelled() }}
+    needs: [decision, docker, git, build, hg, clone, hg-clone]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['graft'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  test:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['test'] && !cancelled() }}
+    needs: [decision, docker, git, build, hg, clone, hg-clone]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['test'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
+  upload:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['upload'] && !failure() }}
+    needs: [decision, docker, build, cram, graft, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['upload'] }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}

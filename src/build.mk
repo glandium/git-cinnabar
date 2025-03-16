@@ -8,10 +8,12 @@ endif
 
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
+NO_UNIX_SOCKETS ?= 1
 
 SOURCE_DIR = $(subst \,/,$(CARGO_MANIFEST_DIR))
 
 vpath %.c $(SOURCE_DIR)/git-core
+vpath version-def.h.in $(SOURCE_DIR)/git-core
 
 $(SOURCE_DIR)/git-core/Makefile:
 	git -C $(SOURCE_DIR) submodule sync
@@ -34,7 +36,10 @@ FAKE_INCLUDE := 1
 FAKE_INCLUDE :=
 include $(SOURCE_DIR)/git-core/Makefile
 
-GIT-VERSION-FILE: GIT-VERSION-GEN
+GIT-VERSION-FILE: GIT-VERSION-GEN GIT-VERSION-FILE.in
+GIT-VERSION-FILE.in: $(SOURCE_DIR)/git-core/GIT-VERSION-FILE.in
+	cat $< > $@
+
 GIT-VERSION-GEN detect-compiler:
 	echo "#!/bin/sh" > $@
 	echo ". $(SOURCE_DIR)/git-core/$@" >> $@
@@ -50,9 +55,7 @@ ALL_CFLAGS := $(filter-out -DPRECOMPOSE_UNICODE,$(ALL_CFLAGS))
 ifdef MINGW_WRAPPERS
 ALL_CFLAGS += -I$(SOURCE_DIR)/src/mingw
 endif
-ifdef WARNINGS_AS_ERRORS
-ALL_CFLAGS += -Werror
-else
+ifndef DEVELOPER
 ALL_CFLAGS += -Werror=implicit-function-declaration
 endif
 
@@ -88,14 +91,14 @@ $(ALL_CINNABAR_OBJECTS): $(LIB_H)
 
 # When not using computed header dependencies, the directories for objects
 # aren't going to be created.
-obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS)))
+obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS)))
 
 $(obj_dirs):
 	@mkdir -p $@
 
 missing_obj_dirs := $(filter-out $(wildcard $(obj_dirs)),$(obj_dirs))
 
-$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
+$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
 endif
 
 PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
@@ -127,7 +130,7 @@ EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
 EXCLUDE_OBJS += serve.o
-libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
+libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(REFTABLE_OBJS) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE

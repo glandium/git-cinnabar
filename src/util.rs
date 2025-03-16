@@ -5,7 +5,8 @@
 use std::alloc::Layout;
 use std::cell::Cell;
 use std::ffi::{CStr, CString, OsStr};
-use std::io::{self, LineWriter, Read, Write};
+use std::fs::File;
+use std::io::{self, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
@@ -16,6 +17,7 @@ use std::os::windows::ffi;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::str::{self, FromStr};
+use std::time::Duration;
 use std::{fmt, mem};
 
 use bstr::{BStr, ByteSlice};
@@ -70,12 +72,6 @@ pub trait ReadExt: Read {
         let mut buf = Vec::new();
         self.read_to_end(&mut buf)?;
         Ok(buf.into_boxed_slice())
-    }
-
-    fn read_all_to_string(&mut self) -> io::Result<ImmutString> {
-        let mut buf = String::new();
-        self.read_to_string(&mut buf)?;
-        Ok(buf.into_boxed_str())
     }
 
     fn read_exactly(&mut self, len: usize) -> io::Result<ImmutBString> {
@@ -138,14 +134,12 @@ impl<F: FnMut(&u8) -> bool> SliceExt<F> for [u8] {
 
 impl SliceExt<&[u8]> for [u8] {
     fn splitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
-        // Safety: This works around ByteSlice::splitn_str being too restrictive.
-        // https://github.com/BurntSushi/bstr/issues/45
-        let iter = self.splitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        let iter = self.splitn_str(N, b);
         array_init::from_iter(iter)
     }
 
     fn rsplitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
-        let iter = self.rsplitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        let iter = self.rsplitn_str(N, b);
         array_init::from_iter_reversed(iter)
     }
 }
@@ -228,16 +222,8 @@ impl<T: FromStr> FromBytes for T {
     }
 }
 
-pub fn bstr_fmt<S: AsRef<[u8]>>(s: &S, f: &mut fmt::Formatter) -> fmt::Result {
-    fmt::Debug::fmt(s.as_ref().as_bstr(), f)
-}
-
 pub trait OptionExt<T> {
     fn as_ptr(&self) -> *const T;
-}
-
-pub trait OptionMutExt<T>: OptionExt<T> {
-    fn as_mut_ptr(&mut self) -> *mut T;
 }
 
 impl<T> OptionExt<T> for Option<&T> {
@@ -254,15 +240,6 @@ impl<T> OptionExt<T> for Option<&mut T> {
         match self {
             Some(x) => *x as *const T,
             None => std::ptr::null(),
-        }
-    }
-}
-
-impl<T> OptionMutExt<T> for Option<&mut T> {
-    fn as_mut_ptr(&mut self) -> *mut T {
-        match self {
-            Some(ref mut x) => *x as *mut T,
-            None => std::ptr::null_mut(),
         }
     }
 }
@@ -286,19 +263,11 @@ fn test_optionext() {
         assert!(!DROPPED.load(Ordering::SeqCst));
     }
 
-    fn callback_mut(ptr: *mut Foo) {
-        assert_ne!(ptr, std::ptr::null_mut());
-        assert!(!DROPPED.load(Ordering::SeqCst));
-    }
-
     // For good measure, ensure that lifetimes workout fine.
     callback(Some(Foo).as_ref().as_ptr());
     assert!(DROPPED.load(Ordering::SeqCst));
     DROPPED.store(false, Ordering::SeqCst);
     callback(Some(Foo).as_mut().as_ptr());
-    assert!(DROPPED.load(Ordering::SeqCst));
-    DROPPED.store(false, Ordering::SeqCst);
-    callback_mut(Some(Foo).as_mut().as_mut_ptr());
     assert!(DROPPED.load(Ordering::SeqCst));
     assert_eq!(std::ptr::null(), (None as Option<&usize>).as_ptr());
 }
@@ -329,6 +298,16 @@ pub trait IteratorExt: Iterator {
         Self::Item: Map,
     {
         MapMapIter { iter: self, f }
+    }
+
+    fn filter_map_while<B, F: FnMut(Self::Item) -> Result<B, bool>>(
+        self,
+        f: F,
+    ) -> FilterMapWhile<Self, F>
+    where
+        Self: Sized,
+    {
+        FilterMapWhile { iter: self, f }
     }
 }
 
@@ -407,6 +386,45 @@ where
     }
 }
 
+pub struct FilterMapWhile<I, F> {
+    iter: I,
+    f: F,
+}
+
+impl<I: Iterator, B, F: FnMut(I::Item) -> Result<B, bool>> Iterator for FilterMapWhile<I, F> {
+    type Item = B;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.f)(self.iter.next()?) {
+                Ok(item) => return Some(item),
+                Err(true) => return None,
+                Err(false) => continue,
+            }
+        }
+    }
+}
+
+#[test]
+fn test_filter_map_while() {
+    let a = [-1i32, 4, 5, 0, 1];
+    let mut iter = a
+        .into_iter()
+        .filter_map_while(|x| if x > 0 { Ok(x * 2) } else { Err(x == 0) });
+    let mut equivalent_iter = a
+        .into_iter()
+        .take_while(|&x| x != 0)
+        .filter_map(|x| (x > 0).then_some(x * 2));
+
+    loop {
+        let item = equivalent_iter.next();
+        assert_eq!(iter.next(), item);
+        if item.is_none() {
+            break;
+        }
+    }
+}
+
 impl<I: Iterator> IteratorExt for I {}
 
 pub type ImmutBString = Box<[u8]>;
@@ -441,7 +459,7 @@ pub trait Transpose {
 }
 
 thread_local! {
-    static RECYCLED_ALLOC: Cell<Option<(NonNull<u8>, Layout)>> = Cell::new(None);
+    static RECYCLED_ALLOC: Cell<Option<(NonNull<u8>, Layout)>> = const { Cell::new(None) };
 }
 
 unsafe fn alloc_recycle(layout: Layout) -> (*mut u8, usize) {
@@ -693,5 +711,157 @@ impl<T> RcExt for RcSlice<T> {
 
     fn builder_with_capacity(capacity: usize) -> Self::Builder {
         Self::Builder::with_capacity(capacity)
+    }
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_gt {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left > right,
+            "assertion `left > right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+#[allow(unused_imports)]
+pub(crate) use assert_gt;
+
+macro_rules! assert_ge {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left >= right,
+            "assertion `left >= right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_ge;
+
+macro_rules! assert_lt {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left < right,
+            "assertion `left < right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_lt;
+
+macro_rules! assert_le {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left <= right,
+            "assertion `left <= right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_le;
+
+pub struct DurationFuzzyDisplay {
+    duration: f32,
+    more: bool,
+}
+
+pub trait DurationExt {
+    fn fuzzy_display(&self) -> DurationFuzzyDisplay;
+
+    #[cfg_attr(not(feature = "version-check"), allow(unused))]
+    fn fuzzy_display_more(&self) -> DurationFuzzyDisplay;
+}
+
+impl DurationExt for Duration {
+    fn fuzzy_display(&self) -> DurationFuzzyDisplay {
+        DurationFuzzyDisplay {
+            duration: self.as_secs_f32(),
+            more: false,
+        }
+    }
+
+    fn fuzzy_display_more(&self) -> DurationFuzzyDisplay {
+        DurationFuzzyDisplay {
+            duration: self.as_secs_f32(),
+            more: true,
+        }
+    }
+}
+
+impl fmt::Display for DurationFuzzyDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.more {
+            let mut write_pluralized = |duration, unit| {
+                f.write_fmt(format_args!(
+                    "{:.0} {}{}",
+                    duration,
+                    unit,
+                    if duration < 2.0 { "" } else { "s" }
+                ))
+            };
+            if self.duration < 1.0 {
+                f.write_fmt(format_args!("{:.1} ms", self.duration * 1000.0))
+            } else if self.duration < 10.0 {
+                f.write_fmt(format_args!("{:.2} seconds", self.duration))
+            } else if self.duration < 60.0 {
+                write_pluralized(self.duration, "second")
+            } else if self.duration < 3600.0 {
+                write_pluralized(self.duration / 60.0, "minute")
+            } else if self.duration < 86400.0 {
+                write_pluralized(self.duration / 3600.0, "hour")
+            } else if self.duration < 604800.0 {
+                write_pluralized(self.duration / 86400.0, "day")
+            } else if self.duration < 31536000.0 {
+                write_pluralized(self.duration / 604800.0, "week")
+            } else {
+                write_pluralized(self.duration / 31536000.0, "year")
+            }
+        } else if self.duration < 1.0 {
+            f.write_fmt(format_args!("{:.1}ms", self.duration * 1000.0))
+        } else if self.duration < 10.0 {
+            f.write_fmt(format_args!("{:.2}s", self.duration))
+        } else {
+            f.write_fmt(format_args!("{:.1}s", self.duration))
+        }
+    }
+}
+
+/// A `Read` that knows its exact length and can seek to its beginning.
+pub trait ExactSizeReadRewind: Read {
+    fn len(&self) -> io::Result<u64>;
+
+    fn rewind(&mut self) -> io::Result<()>;
+}
+
+impl ExactSizeReadRewind for File {
+    fn len(&self) -> io::Result<u64> {
+        self.metadata().map(|m| m.len())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.seek(SeekFrom::Start(0)).map(|_| ())
+    }
+}
+
+impl<T: AsRef<[u8]>> ExactSizeReadRewind for Cursor<T> {
+    fn len(&self) -> io::Result<u64> {
+        Ok(self.get_ref().as_ref().len().try_into().unwrap())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.set_position(0);
+        Ok(())
     }
 }

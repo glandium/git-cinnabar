@@ -27,27 +27,33 @@ use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
-use crate::git::CommitId;
+use crate::get_changes;
+use crate::git::{CommitId, RawCommit};
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libcinnabar::{hg_object_id, strslice};
-use crate::libgit::{die, RawCommit};
+use crate::libcinnabar::{hg_object_id, strslice, AsStrSlice};
+use crate::libgit::die;
 use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
+    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, Store,
 };
 use crate::tree_util::{Empty, WithPath};
-use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
+use crate::util::{assert_ge, assert_lt, FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
-use crate::{get_changes, HELPER_LOCK};
 
 #[no_mangle]
 pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
     ptr::write(
         iterator,
-        chunk.as_ref().unwrap().revchunk.iter_diff().0.into(),
+        chunk
+            .as_ref()
+            .unwrap()
+            .revchunk
+            .iter_diff()
+            .0
+            .as_str_slice(),
     );
 }
 
@@ -58,9 +64,12 @@ pub unsafe extern "C" fn rev_diff_iter_next(
 ) -> c_int {
     let mut diff_iter = RevDiffIter(iterator.as_mut().unwrap().as_bytes());
     let next = diff_iter.next();
-    ptr::write(iterator, diff_iter.0.into());
+    ptr::write(iterator, diff_iter.0.as_str_slice());
     if let Some(p) = next {
-        ptr::write(part, mem::transmute(p.0));
+        ptr::write(
+            part,
+            mem::transmute::<rev_diff_part<'_>, rev_diff_part<'_>>(p.0),
+        );
         1
     } else {
         0
@@ -70,7 +79,6 @@ pub unsafe extern "C" fn rev_diff_iter_next(
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct rev_chunk {
-    raw: strslice<'static>,
     node: NonNull<hg_object_id>,
     parent1: NonNull<hg_object_id>,
     parent2: NonNull<hg_object_id>,
@@ -121,7 +129,6 @@ impl From<RevChunk> for rev_chunk {
         let buf = &mut chunk.raw[..];
         unsafe {
             rev_chunk {
-                raw: mem::transmute(strslice::from(&mut buf[..])),
                 node: NonNull::new_unchecked(buf.as_mut_ptr()).cast(),
                 parent1: NonNull::new_unchecked(buf.as_mut_ptr().add(20)).cast(),
                 parent2: NonNull::new_unchecked(buf.as_mut_ptr().add(40)).cast(),
@@ -176,7 +183,6 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<Rc<HgObjectId>>,
     next_delta_node: Option<Rc<HgObjectId>>,
     reader: R,
 }
@@ -185,7 +191,6 @@ impl<R: Read> RevChunkIter<R> {
     pub fn new(version: u8, reader: R) -> Self {
         RevChunkIter {
             version,
-            delta_node: None,
             next_delta_node: None,
             reader,
         }
@@ -211,10 +216,8 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         };
 
         chunk.delta_node = (self.version == 1).then(|| {
-            mem::swap(&mut self.delta_node, &mut self.next_delta_node);
             let delta_node = self
-                .delta_node
-                .clone()
+                .next_delta_node
                 .take()
                 .unwrap_or_else(|| chunk.parent1().into());
 
@@ -266,12 +269,12 @@ impl<'a> Iterator for RevDiffIter<'a> {
         Some(RevDiffPart(rev_diff_part {
             start,
             end,
-            data: data.into(),
+            data: data.as_str_slice(),
         }))
     }
 }
 
-impl<'a> RevDiffPart<'a> {
+impl RevDiffPart<'_> {
     pub fn start(&self) -> usize {
         self.0.start
     }
@@ -504,7 +507,7 @@ impl BundlePartInfo {
     pub fn read_from(mut reader: impl Read) -> io::Result<Self> {
         let part_type_len = reader.read_u8()?;
         let part_type = reader.read_exactly_to_string(part_type_len.into())?;
-        let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
+        let mandatory = part_type.chars().next().is_some_and(char::is_uppercase);
         let part_type = part_type.to_lowercase().into_boxed_str();
         let part_id = reader.read_u32::<BigEndian>()?;
         let mandatory_params_num = reader.read_u8()?;
@@ -598,7 +601,7 @@ pub struct BundlePartReader<'a> {
     remaining: Option<&'a mut u32>,
 }
 
-impl<'a> Read for BundlePartReader<'a> {
+impl Read for BundlePartReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.version {
             BundleVersion::V1 => {
@@ -700,7 +703,7 @@ impl<'a> BundleWriter<'a> {
     }
 }
 
-impl<'a> Drop for BundleWriter<'a> {
+impl Drop for BundleWriter<'_> {
     fn drop(&mut self) {
         if self.version == BundleVersion::V2 {
             write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
@@ -734,7 +737,7 @@ impl<'a, const CHUNK_SIZE: usize> BundlePartWriter<'a, CHUNK_SIZE> {
     }
 }
 
-impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
+impl<const CHUNK_SIZE: usize> Drop for BundlePartWriter<'_, CHUNK_SIZE> {
     fn drop(&mut self) {
         self.flush_buf_as_chunk().unwrap();
         if self.bundle2_buf.is_some() {
@@ -744,7 +747,7 @@ impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
     }
 }
 
-impl<'a, const CHUNK_SIZE: usize> Write for BundlePartWriter<'a, CHUNK_SIZE> {
+impl<const CHUNK_SIZE: usize> Write for BundlePartWriter<'_, CHUNK_SIZE> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if let Some(bundle2_buf) = self.bundle2_buf.as_mut() {
             let full_len = buf.len();
@@ -953,7 +956,7 @@ impl<R: Read> HgRepo for BundleConnection<R> {
                 .branch_heads()
                 .enumerate()
                 .sorted_by_key(|(n, (_, branch))| (*branch, *n))
-                .group_by(|(_, (_, branch))| *branch)
+                .chunk_by(|(_, (_, branch))| *branch)
             {
                 branchmap.extend_from_slice(branch);
                 writeln!(
@@ -1064,6 +1067,7 @@ fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
 }
 
 pub fn create_bundle(
+    store: &Store,
     changesets: impl Iterator<Item = [HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
@@ -1093,7 +1097,6 @@ pub fn create_bundle(
         // TODO: add branch.
         changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
-        let _lock = HELPER_LOCK.lock().unwrap();
         write_chunk(
             &mut bundle_part_writer,
             version,
@@ -1105,7 +1108,7 @@ pub fn create_bundle(
             true,
             |node| {
                 let node = HgChangesetId::from_unchecked(node);
-                RawHgChangeset::read(node.to_git().unwrap()).unwrap()
+                RawHgChangeset::read(store, node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
@@ -1117,15 +1120,15 @@ pub fn create_bundle(
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let metadata = RawGitChangesetMetadata::read(node.to_git().unwrap()).unwrap();
+        let metadata = RawGitChangesetMetadata::read(store, node.to_git(store).unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
         let manifest = metadata.manifest_id();
         if !manifest.is_null() && !manifests.contains_key(&manifest) {
-            let manifest_commit = RawCommit::read(manifest.to_git().unwrap().into()).unwrap();
+            let manifest_commit = RawCommit::read(manifest.to_git(store).unwrap().into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
             let mn_parent1 = manifest_parents
-                .get(0)
+                .first()
                 .copied()
                 .map_or(HgManifestId::NULL, get_manifest);
             let mn_parent2 = manifest_parents
@@ -1138,12 +1141,14 @@ pub fn create_bundle(
         }
     }
     bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
-    let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
-    bundle_files(&mut bundle_part_writer, version, files);
+    let files = bundle_manifest(store, &mut bundle_part_writer, version, manifests.drain(..));
+    bundle_files(store, &mut bundle_part_writer, version, files);
     changeset_heads
 }
 
+#[allow(clippy::type_complexity)]
 fn bundle_manifest<const CHUNK_SIZE: usize>(
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     manifests: impl IntoIterator<Item = (HgManifestId, (HgManifestId, HgManifestId, HgChangesetId))>,
@@ -1170,15 +1175,15 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             false,
             |node| {
                 let node = HgManifestId::from_unchecked(node);
-                RawHgManifest::read(node.to_git().unwrap()).unwrap()
+                RawHgManifest::read(node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
-        let git_node = node.to_git().unwrap();
+        let git_node = node.to_git(store).unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
             .filter(|p| !p.is_null())
-            .map(|p| (p.to_git().unwrap().into()))
+            .map(|p| (p.to_git(store).unwrap().into()))
             .collect_vec();
         for (path, (hg_file, hg_fileparents)) in
             get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)
@@ -1190,7 +1195,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                     .entry(hg_file)
                     .or_insert_with(|| {
                         (
-                            hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                            hg_fileparents.first().copied().unwrap_or(HgFileId::NULL),
                             hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
                             changeset,
                         )
@@ -1203,6 +1208,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
 }
 
 fn bundle_files<const CHUNK_SIZE: usize>(
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     files: impl IntoIterator<
@@ -1225,7 +1231,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
-            let data = RawHgFile::read_hg(node).unwrap();
+            let data = RawHgFile::read_hg(store, node).unwrap();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
             if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
@@ -1254,7 +1260,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                 changeset,
                 &mut previous,
                 false,
-                |oid| RawHgFile::read_hg(HgFileId::from_unchecked(oid)).unwrap(),
+                |oid| RawHgFile::read_hg(store, HgFileId::from_unchecked(oid)).unwrap(),
             )
             .unwrap();
         }
