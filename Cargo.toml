@@ -79,7 +79,7 @@ version = "0.4"
 default-features = false
 
 [dependencies.derive_more]
-version = "1"
+version = "2"
 default-features = false
 features = ["deref", "display", "debug", "from", "try_into"]
 
