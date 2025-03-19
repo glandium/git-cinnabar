@@ -6,7 +6,6 @@ use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
-use std::fs::File;
 use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
@@ -44,7 +43,7 @@ use crate::hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
-use crate::hg_connect_http::HttpRequest;
+use crate::hg_connect::get_reader;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
@@ -2391,19 +2390,7 @@ pub fn merge_metadata(
         .collect::<HashMap<_, _>>();
     let mut bundle =
         if remote_refs.is_empty() && ["http", "https", "file"].contains(&git_url.scheme()) {
-            let bundle = if git_url.scheme() == "file" {
-                let path = git_url.to_file_path().unwrap();
-                File::open(path)
-                    .map(|f| Box::new(f) as Box<dyn Read>)
-                    .map_err(|e| e.to_string())
-            } else {
-                let mut req = HttpRequest::new(git_url.clone());
-                req.follow_redirects(true);
-                req.set_log_target("raw-wire::cinnabarclone".to_string());
-                // We let curl handle Content-Encoding: gzip via Accept-Encoding.
-                req.execute().map(|h| Box::new(h) as _)
-            };
-            let mut bundle = match bundle {
+            let mut bundle = match get_reader(&git_url, "cinnabarclone") {
                 Ok(bundle) => bundle,
                 Err(e) => {
                     error!(target: "root", "{}", e);
