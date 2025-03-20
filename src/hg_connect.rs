@@ -8,6 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -15,6 +16,8 @@ use bstr::{BStr, ByteSlice};
 use either::Either;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+#[rustversion::before(1.79)]
+use path_absolutize::Absolutize;
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
@@ -1276,8 +1279,23 @@ pub fn get_clonebundle_url(conn: &mut dyn HgRepo) -> Option<Url> {
     None
 }
 
-fn url_from_str(url: &str) -> Result<Url, url::ParseError> {
-    Url::parse(url).or_else(|_| Url::parse(&format!("file://{}", url)))
+#[rustversion::since(1.79)]
+#[allow(clippy::incompatible_msrv)]
+fn absolute<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
+    std::path::absolute(path)
+}
+
+#[rustversion::before(1.79)]
+fn absolute<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
+    path.as_ref().absolutize().map(Cow::into_owned)
+}
+
+fn url_from_str(url: &str) -> Result<Url, String> {
+    Url::parse(url).or_else(|_| {
+        absolute(url)
+            .map_err(|e| e.to_string())
+            .and_then(|path| Url::from_file_path(path).map_err(|_| "Not a valid path".to_string()))
+    })
 }
 
 struct CinnabarCloneInfo<'a> {
