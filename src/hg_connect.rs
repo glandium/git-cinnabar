@@ -8,6 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -15,6 +16,8 @@ use bstr::{BStr, ByteSlice};
 use either::Either;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+#[rustversion::before(1.79)]
+use path_absolutize::Absolutize;
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
@@ -1180,7 +1183,7 @@ fn get_initial_bundle(
 
     if conn.get_capability(b"clonebundles").is_some() {
         if let Some(url) = get_config_remote("clonebundle", remote)
-            .map(|url| (!url.is_empty()).then(|| Url::parse(url.to_str().unwrap()).unwrap()))
+            .map(|url| (!url.is_empty()).then(|| url_from_str(url.to_str().unwrap()).unwrap()))
             .or_else(|| Some(get_clonebundle_url(conn)))
             .flatten()
         {
@@ -1276,6 +1279,25 @@ pub fn get_clonebundle_url(conn: &mut dyn HgRepo) -> Option<Url> {
     None
 }
 
+#[rustversion::since(1.79)]
+#[allow(clippy::incompatible_msrv)]
+fn absolute<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
+    std::path::absolute(path)
+}
+
+#[rustversion::before(1.79)]
+fn absolute<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
+    path.as_ref().absolutize().map(Cow::into_owned)
+}
+
+fn url_from_str(url: &str) -> Result<Url, String> {
+    Url::parse(url).or_else(|_| {
+        absolute(url)
+            .map_err(|e| e.to_string())
+            .and_then(|path| Url::from_file_path(path).map_err(|_| "Not a valid path".to_string()))
+    })
+}
+
 struct CinnabarCloneInfo<'a> {
     url: Url,
     branch: Option<&'a [u8]>,
@@ -1292,11 +1314,7 @@ fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String>
                 None => return Ok(None),
                 Some(url) => std::str::from_utf8(url)
                     .ok()
-                    .and_then(|url| {
-                        Url::parse(url)
-                            .or_else(|_| Url::parse(&format!("file://{}", url)))
-                            .ok()
-                    })
+                    .and_then(|url| url_from_str(url).ok())
                     .ok_or("invalid url")?,
             };
             (url, spec.next())
@@ -1419,13 +1437,26 @@ pub fn get_cinnabarclone_url(
     }
 }
 
-pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
-    let mut req = HttpRequest::new(url.clone());
-    if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
-        req.follow_redirects(true);
+pub fn get_reader(url: &Url, log_target: &'static str) -> Result<Box<dyn Read>, String> {
+    if url.scheme() == "file" {
+        let path = url.to_file_path().unwrap();
+        File::open(path)
+            .map(|f| Box::new(f) as _)
+            .map_err(|e| e.to_string())
+    } else {
+        let mut req = HttpRequest::new(url.clone());
+        if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
+            req.follow_redirects(true);
+        }
+        req.set_log_target(format!("raw-wire::{log_target}"));
+        req.execute().map(|h| Box::new(h) as _)
     }
-    req.set_log_target("raw-wire::clonebundle".to_string());
-    Some(Box::new(BundleConnection::new(req.execute().ok()?)))
+}
+
+pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
+    Some(Box::new(BundleConnection::new(
+        get_reader(url, "clonebundle").ok()?,
+    )))
 }
 
 pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {

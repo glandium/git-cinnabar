@@ -123,7 +123,7 @@ macro_rules! die {
 pub(crate) use die;
 
 extern "C" {
-    pub fn credential_fill(auth: *mut credential, all_capabilities: c_int);
+    pub fn credential_fill(repo: *mut repository, auth: *mut credential, all_capabilities: c_int);
 
     pub static mut http_auth: credential;
 
@@ -1186,9 +1186,9 @@ pub fn config_get_value(key: &str) -> Option<OsString> {
 extern "C" {
     fn get_reachable_subset(
         from: *const *const commit,
-        nr_from: c_int,
+        nr_from: usize,
         to: *const *const commit,
-        nr_to: c_int,
+        nr_to: usize,
         reachable_flag: c_uint,
     ) -> *mut commit_list;
 
@@ -1240,15 +1240,7 @@ pub fn reachable_subset(
         })
         .collect::<Vec<_>>();
     CommitList {
-        list: unsafe {
-            get_reachable_subset(
-                from.as_ptr(),
-                from.len().try_into().unwrap(),
-                to.as_ptr(),
-                to.len().try_into().unwrap(),
-                0,
-            )
-        },
+        list: unsafe { get_reachable_subset(from.as_ptr(), from.len(), to.as_ptr(), to.len(), 0) },
     }
 }
 

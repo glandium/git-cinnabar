@@ -42,7 +42,7 @@ use crate::hg_connect::{
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config,
-    run_one_slot, slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
+    run_one_slot, slot_results, ssl_cainfo, the_repository, HTTP_OK, HTTP_REAUTH,
 };
 use crate::logging::{self, LoggingReader, LoggingWriter};
 use crate::util::{
@@ -498,7 +498,7 @@ impl HttpRequest {
                     if let Some(log_target) = &this.log_target {
                         trace!(target: &log_target, "Request required reauthentication");
                     }
-                    unsafe { credential_fill(ptr::addr_of_mut!(http_auth), 1) };
+                    unsafe { credential_fill(the_repository, ptr::addr_of_mut!(http_auth), 1) };
                     this.execute_once()
                 } else {
                     Err((result, this))

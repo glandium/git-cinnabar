@@ -43,7 +43,7 @@ use crate::hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
-use crate::hg_connect_http::HttpRequest;
+use crate::hg_connect::get_reader;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
@@ -2388,48 +2388,45 @@ pub fn merge_metadata(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut bundle = if remote_refs.is_empty() && ["http", "https"].contains(&git_url.scheme()) {
-        let mut req = HttpRequest::new(git_url.clone());
-        req.follow_redirects(true);
-        req.set_log_target("raw-wire::cinnabarclone".to_string());
-        // We let curl handle Content-Encoding: gzip via Accept-Encoding.
-        let mut bundle = match req.execute() {
-            Ok(bundle) => bundle,
-            Err(e) => {
-                error!(target: "root", "{}", e);
+    let mut bundle =
+        if remote_refs.is_empty() && ["http", "https", "file"].contains(&git_url.scheme()) {
+            let mut bundle = match get_reader(&git_url, "cinnabarclone") {
+                Ok(bundle) => bundle,
+                Err(e) => {
+                    error!(target: "root", "{}", e);
+                    return false;
+                }
+            };
+            const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
+            let signature = (&mut bundle)
+                .take(BUNDLE_SIGNATURE.len() as u64)
+                .read_all()
+                .unwrap();
+            if &*signature != BUNDLE_SIGNATURE.as_bytes() {
+                error!(target: "root", "Could not find cinnabar metadata");
                 return false;
             }
+            let mut bundle = BufReader::new(bundle);
+            let mut line = Vec::new();
+            loop {
+                line.truncate(0);
+                bundle.read_until(b'\n', &mut line).unwrap();
+                if line.ends_with(b"\n") {
+                    line.pop();
+                }
+                if line.is_empty() {
+                    break;
+                }
+                let [sha1, refname] = line.splitn_exact(b' ').unwrap();
+                remote_refs.insert(
+                    refname.as_bstr().to_boxed(),
+                    CommitId::from_bytes(sha1).unwrap(),
+                );
+            }
+            Some(bundle)
+        } else {
+            None
         };
-        const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
-        let signature = (&mut bundle)
-            .take(BUNDLE_SIGNATURE.len() as u64)
-            .read_all()
-            .unwrap();
-        if &*signature != BUNDLE_SIGNATURE.as_bytes() {
-            error!(target: "root", "Could not find cinnabar metadata");
-            return false;
-        }
-        let mut bundle = BufReader::new(bundle);
-        let mut line = Vec::new();
-        loop {
-            line.truncate(0);
-            bundle.read_until(b'\n', &mut line).unwrap();
-            if line.ends_with(b"\n") {
-                line.pop();
-            }
-            if line.is_empty() {
-                break;
-            }
-            let [sha1, refname] = line.splitn_exact(b' ').unwrap();
-            remote_refs.insert(
-                refname.as_bstr().to_boxed(),
-                CommitId::from_bytes(sha1).unwrap(),
-            );
-        }
-        Some(bundle)
-    } else {
-        None
-    };
 
     let branches = branch.map_or_else(
         || hg_url.map(branches_for_url).unwrap_or_default(),

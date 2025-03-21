@@ -72,7 +72,7 @@ CINNABAR_OBJECTS += regex.o
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
 define patch
-$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c $$(SOURCE_DIR)/git-core/compat/win32/$1.c))
+$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
@@ -102,9 +102,6 @@ $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS): $(missing_ob
 endif
 
 PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
-ifeq (,$(filter compat/win32/fscache.o,$(LIB_OBJS)))
-PATCHED_GIT_OBJECTS := $(filter-out fscache.patched.o,$(PATCHED_GIT_OBJECTS))
-endif
 ALL_CINNABAR_OBJECTS = $(CINNABAR_OBJECTS) $(PATCHED_GIT_OBJECTS)
 
 ifeq (,$(filter http.c.patch,$(PATCHES)))
@@ -122,7 +119,6 @@ EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
 EXCLUDE_OBJS += compat/precompose_utf8.o
 EXCLUDE_OBJS += compat/regex/regex.o
-EXCLUDE_OBJS += compat/win32/fscache.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
 EXCLUDE_OBJS += diagnose.o
