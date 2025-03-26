@@ -5330,6 +5330,8 @@ static CHECKS: Lazy<Checks> = Lazy::new(|| checks_from_config(get_config("check"
 
 fn checks_from_config(config: Option<OsString>) -> Checks {
     let mut checks = Checks::VERSION;
+    #[cfg(debug_assertions)]
+    checks.set(Checks::TRACEBACK, true);
     if let Some(config) = config {
         for c in config.as_bytes().split(|&b| b == b',') {
             if matches!(c, b"true" | b"all") {
@@ -5361,7 +5363,9 @@ fn checks_from_config(config: Option<OsString>) -> Checks {
 
 #[test]
 fn test_checks_from_config() {
-    let default = Checks::VERSION;
+    let mut default = Checks::VERSION;
+    #[cfg(debug_assertions)]
+    default.set(Checks::TRACEBACK, true);
     assert_eq!(checks_from_config(None), default);
     assert_eq!(checks_from_config(Some("".into())), default);
     assert_eq!(checks_from_config(Some(",".into())), default);
