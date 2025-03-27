@@ -5308,7 +5308,7 @@ pub fn get_config_remote(name: &str, remote: Option<&str>) -> Option<OsString> {
 }
 
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq)]
     pub struct Checks: i32 {
         const HELPER = 0x1;
         const MANIFESTS = 0x2;
@@ -5326,29 +5326,72 @@ bitflags! {
     }
 }
 
-static CHECKS: Lazy<Checks> = Lazy::new(|| {
+static CHECKS: Lazy<Checks> = Lazy::new(|| checks_from_config(get_config("check")));
+
+fn checks_from_config(config: Option<OsString>) -> Checks {
     let mut checks = Checks::VERSION;
-    if let Some(config) = get_config("check") {
+    if let Some(config) = config {
         for c in config.as_bytes().split(|&b| b == b',') {
-            match c {
-                b"true" | b"all" => checks = Checks::ALL_BASE_CHECKS,
-                b"helper" => checks.set(Checks::HELPER, true),
-                b"manifests" => checks.set(Checks::MANIFESTS, true),
-                b"no-version-check" => checks.set(Checks::VERSION, false),
-                b"nodeid" => checks.set(Checks::NODEID, true),
-                b"files" => checks.set(Checks::FILES, true),
-                b"time" => checks.set(Checks::TIME, true),
-                b"traceback" => checks.set(Checks::TRACEBACK, true),
-                b"no-bundle2" => checks.set(Checks::NO_BUNDLE2, true),
-                b"cinnabarclone" => checks.set(Checks::CINNABARCLONE, true),
-                b"clonebundles" => checks.set(Checks::CLONEBUNDLES, true),
-                b"unbundler" => checks.set(Checks::UNBUNDLER, true),
-                _ => {}
+            if matches!(c, b"true" | b"all") {
+                checks = Checks::ALL_BASE_CHECKS;
+            } else {
+                let (value, name) = c
+                    .strip_prefix(b"no-")
+                    .map_or((true, c), |name| (false, name));
+                let bits = match name {
+                    b"helper" => Checks::HELPER,
+                    b"manifests" => Checks::MANIFESTS,
+                    b"version-check" => Checks::VERSION,
+                    b"nodeid" => Checks::NODEID,
+                    b"files" => Checks::FILES,
+                    b"time" => Checks::TIME,
+                    b"traceback" => Checks::TRACEBACK,
+                    b"no-bundle2" => Checks::NO_BUNDLE2,
+                    b"cinnabarclone" => Checks::CINNABARCLONE,
+                    b"clonebundles" => Checks::CLONEBUNDLES,
+                    b"unbundler" => Checks::UNBUNDLER,
+                    _ => Checks::empty(),
+                };
+                checks.set(bits, value);
             }
         }
     }
     checks
-});
+}
+
+#[test]
+fn test_checks_from_config() {
+    let default = Checks::VERSION;
+    assert_eq!(checks_from_config(None), default);
+    assert_eq!(checks_from_config(Some("".into())), default);
+    assert_eq!(checks_from_config(Some(",".into())), default);
+    assert_eq!(checks_from_config(Some("foo".into())), default);
+    assert_eq!(
+        checks_from_config(Some("helper".into())),
+        default | Checks::HELPER
+    );
+    assert_eq!(
+        checks_from_config(Some("helper,".into())),
+        default | Checks::HELPER
+    );
+    assert_eq!(
+        checks_from_config(Some("helper,nodeid".into())),
+        default | Checks::HELPER | Checks::NODEID
+    );
+    assert_eq!(
+        checks_from_config(Some("no-version-check".into())),
+        default & !Checks::VERSION
+    );
+    assert_eq!(
+        checks_from_config(Some("no-traceback".into())),
+        Checks::VERSION
+    );
+    assert_eq!(checks_from_config(Some("helper,no-helper".into())), default);
+    assert_eq!(
+        checks_from_config(Some("no-helper,helper".into())),
+        default | Checks::HELPER
+    );
+}
 
 #[no_mangle]
 unsafe extern "C" fn cinnabar_check(flag: c_int) -> c_int {
