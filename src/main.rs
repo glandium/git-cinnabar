@@ -198,7 +198,7 @@ fn dump_ref_updates() {
 fn the_store() -> Result<Store, &'static str> {
     unsafe { HAS_GIT_REPO }
         .then(|| {
-            let c = get_oid_committish(METADATA_REF.as_bytes());
+            let c = resolve_ref(METADATA_REF);
             Store::new(c)
         })
         .ok_or("not a git repository")
