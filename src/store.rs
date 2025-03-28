@@ -57,7 +57,7 @@ use crate::util::{
     FromBytes, ImmutBString, IteratorExt, OsStrExt, RcExt, RcSlice, RcSliceBuilder, ReadExt,
     SliceExt, ToBoxed, Transpose,
 };
-use crate::xdiff::{apply, textdiff, PatchInfo};
+use crate::xdiff::{apply, bytediff, PatchInfo};
 use crate::{check_enabled, experiment, has_compat, Checks, Compat, Experiments};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -388,26 +388,10 @@ impl GeneratedGitChangesetMetadata {
         };
         let new = RawHgChangeset::from_metadata_(store, commit, &temp, false)?;
         if **raw_changeset != *new {
-            // TODO: produce a better patch (byte_diff). In the meanwhile, we
-            // do an approximation by taking the by-line diff from textdiff
-            // and eliminating common parts, which is good enough.
-            temp.patch = Some(GitChangesetPatch::from_patch_info(
-                textdiff(&new, raw_changeset).map(|p| {
-                    let orig = &new[p.start..p.end];
-                    let patched = p.data;
-                    let common_prefix = Iterator::zip(orig.iter(), patched.iter())
-                        .take_while(|(&a, &b)| a == b)
-                        .count();
-                    let common_suffix = Iterator::zip(orig.iter().rev(), patched.iter().rev())
-                        .take_while(|(&a, &b)| a == b)
-                        .count();
-                    PatchInfo {
-                        start: p.start + common_prefix,
-                        end: p.end - common_suffix,
-                        data: &p.data[common_prefix..p.data.len() - common_suffix],
-                    }
-                }),
-            ));
+            temp.patch = Some(GitChangesetPatch::from_patch_info(bytediff(
+                &new,
+                raw_changeset,
+            )));
         }
         Some(temp)
     }
