@@ -220,3 +220,51 @@ fn test_textdiff() {
         ]
     );
 }
+
+pub fn bytediff<'a, 'b: 'a>(
+    a: &'a [u8],
+    b: &'b [u8],
+) -> impl Iterator<Item = PatchInfo<&'b [u8]>> + 'a {
+    // TODO: produce a better patch. In the meanwhile, we do an approximation by taking
+    // the by-line diff from textdiff and eliminating common parts, which is good enough.
+    textdiff(a, b).map(move |p| {
+        let orig = &a[p.start..p.end];
+        let patched = p.data;
+        let common_prefix = Iterator::zip(orig.iter(), patched.iter())
+            .take_while(|(&a, &b)| a == b)
+            .count();
+        let common_suffix = Iterator::zip(
+            orig.iter().skip(common_prefix).rev(),
+            patched.iter().skip(common_prefix).rev(),
+        )
+        .take_while(|(&a, &b)| a == b)
+        .count();
+        PatchInfo {
+            start: p.start + common_prefix,
+            end: p.end - common_suffix,
+            data: &p.data[common_prefix..p.data.len() - common_suffix],
+        }
+    })
+}
+
+#[test]
+fn test_bytediff() {
+    let a = ["foo", "bar", "baz", "qux"].join("\n");
+    let b = ["foo", "br", "baz", "ququx"].join("\n");
+    let result = bytediff(a.as_bytes(), b.as_bytes());
+    assert_eq!(
+        result.collect::<Vec<_>>(),
+        vec![
+            PatchInfo {
+                start: 5,
+                end: 6,
+                data: b"".as_bstr()
+            },
+            PatchInfo {
+                start: 14,
+                end: 14,
+                data: b"qu".as_bstr()
+            },
+        ]
+    );
+}

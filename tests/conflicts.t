@@ -169,7 +169,7 @@ are not handled by git-cinnabar.
 Equivalent to a push.
 TODO: At the moment, this is not handled gracefully.
 
-  $ git -C $REPO cinnabar bundle bundle.hd -- --all
+  $ GIT_CINNABAR_CHECK=$GIT_CINNABAR_CHECK,no-traceback git -C $REPO cinnabar bundle bundle.hd -- --all
   fatal: assertion failed: self.ids.insert(node, id).is_none()
   Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: git-cinnabar died of signal 6

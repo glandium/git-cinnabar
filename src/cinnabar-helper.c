@@ -250,7 +250,7 @@ static void cleanup_git_config(int nongit)
 		free(user_config);
 		free(xdg_config);
 		if (!nongit) {
-			user_config = git_pathdup("config");
+			user_config = repo_git_path(the_repository, "config");
 			if (user_config) {
 				git_config_set_in_file_gently(
 					user_config, "cinnabar.fsck", NULL,
@@ -419,9 +419,4 @@ int init_cinnabar(const char *argv0)
 		prepare_repo_settings(the_repository);
 	}
 	return !nongit;
-}
-
-int common_exit(const char *file UNUSED, int line UNUSED, int code)
-{
-	return code;
 }

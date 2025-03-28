@@ -33,11 +33,12 @@ VERSIONS = {
     "0.6.3": "0.6.3",
     "0.7.0beta1": "0.7.0-beta.1",
     "0.7.0beta2": "0.7.0-beta.2",
+    "0.7.0": "0.7.0",
+    "0.7.1": "0.7.1",
     # Newer versions below. We're bound to what older versions were doing to find the
     # right download on self-update. I don't know what went through my head when I
     # made that code strip dashes from tag names...
-    "0.7.0": "0.7.0",
-    "0.7.1": "0.7.1",
+    "0.7.2": "0.7.2",
     # Here's a trick to make things happy-ish in the future: older versions don't
     # handle tags prefixed with "v", but will still do a self-update to the first
     # one it finds.

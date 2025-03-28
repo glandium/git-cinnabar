@@ -43,7 +43,7 @@ use crate::hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
-use crate::hg_connect_http::HttpRequest;
+use crate::hg_connect::get_reader;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
@@ -57,7 +57,7 @@ use crate::util::{
     FromBytes, ImmutBString, IteratorExt, OsStrExt, RcExt, RcSlice, RcSliceBuilder, ReadExt,
     SliceExt, ToBoxed, Transpose,
 };
-use crate::xdiff::{apply, textdiff, PatchInfo};
+use crate::xdiff::{apply, bytediff, PatchInfo};
 use crate::{check_enabled, experiment, has_compat, Checks, Compat, Experiments};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -388,26 +388,10 @@ impl GeneratedGitChangesetMetadata {
         };
         let new = RawHgChangeset::from_metadata_(store, commit, &temp, false)?;
         if **raw_changeset != *new {
-            // TODO: produce a better patch (byte_diff). In the meanwhile, we
-            // do an approximation by taking the by-line diff from textdiff
-            // and eliminating common parts, which is good enough.
-            temp.patch = Some(GitChangesetPatch::from_patch_info(
-                textdiff(&new, raw_changeset).map(|p| {
-                    let orig = &new[p.start..p.end];
-                    let patched = p.data;
-                    let common_prefix = Iterator::zip(orig.iter(), patched.iter())
-                        .take_while(|(&a, &b)| a == b)
-                        .count();
-                    let common_suffix = Iterator::zip(orig.iter().rev(), patched.iter().rev())
-                        .take_while(|(&a, &b)| a == b)
-                        .count();
-                    PatchInfo {
-                        start: p.start + common_prefix,
-                        end: p.end - common_suffix,
-                        data: &p.data[common_prefix..p.data.len() - common_suffix],
-                    }
-                }),
-            ));
+            temp.patch = Some(GitChangesetPatch::from_patch_info(bytediff(
+                &new,
+                raw_changeset,
+            )));
         }
         Some(temp)
     }
@@ -2388,48 +2372,45 @@ pub fn merge_metadata(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut bundle = if remote_refs.is_empty() && ["http", "https"].contains(&git_url.scheme()) {
-        let mut req = HttpRequest::new(git_url.clone());
-        req.follow_redirects(true);
-        req.set_log_target("raw-wire::cinnabarclone".to_string());
-        // We let curl handle Content-Encoding: gzip via Accept-Encoding.
-        let mut bundle = match req.execute() {
-            Ok(bundle) => bundle,
-            Err(e) => {
-                error!(target: "root", "{}", e);
+    let mut bundle =
+        if remote_refs.is_empty() && ["http", "https", "file"].contains(&git_url.scheme()) {
+            let mut bundle = match get_reader(&git_url, "cinnabarclone") {
+                Ok(bundle) => bundle,
+                Err(e) => {
+                    error!(target: "root", "{}", e);
+                    return false;
+                }
+            };
+            const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
+            let signature = (&mut bundle)
+                .take(BUNDLE_SIGNATURE.len() as u64)
+                .read_all()
+                .unwrap();
+            if &*signature != BUNDLE_SIGNATURE.as_bytes() {
+                error!(target: "root", "Could not find cinnabar metadata");
                 return false;
             }
+            let mut bundle = BufReader::new(bundle);
+            let mut line = Vec::new();
+            loop {
+                line.truncate(0);
+                bundle.read_until(b'\n', &mut line).unwrap();
+                if line.ends_with(b"\n") {
+                    line.pop();
+                }
+                if line.is_empty() {
+                    break;
+                }
+                let [sha1, refname] = line.splitn_exact(b' ').unwrap();
+                remote_refs.insert(
+                    refname.as_bstr().to_boxed(),
+                    CommitId::from_bytes(sha1).unwrap(),
+                );
+            }
+            Some(bundle)
+        } else {
+            None
         };
-        const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
-        let signature = (&mut bundle)
-            .take(BUNDLE_SIGNATURE.len() as u64)
-            .read_all()
-            .unwrap();
-        if &*signature != BUNDLE_SIGNATURE.as_bytes() {
-            error!(target: "root", "Could not find cinnabar metadata");
-            return false;
-        }
-        let mut bundle = BufReader::new(bundle);
-        let mut line = Vec::new();
-        loop {
-            line.truncate(0);
-            bundle.read_until(b'\n', &mut line).unwrap();
-            if line.ends_with(b"\n") {
-                line.pop();
-            }
-            if line.is_empty() {
-                break;
-            }
-            let [sha1, refname] = line.splitn_exact(b' ').unwrap();
-            remote_refs.insert(
-                refname.as_bstr().to_boxed(),
-                CommitId::from_bytes(sha1).unwrap(),
-            );
-        }
-        Some(bundle)
-    } else {
-        None
-    };
 
     let branches = branch.map_or_else(
         || hg_url.map(branches_for_url).unwrap_or_default(),
