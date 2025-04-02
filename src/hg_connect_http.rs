@@ -333,7 +333,7 @@ impl HttpRequest {
     #[allow(clippy::result_large_err)]
     fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
         let (sender, receiver) = channel::<HttpRequestChannelData>();
-        let token = self.token.clone();
+        let token = Arc::clone(&self.token);
         let thread = thread::Builder::new()
             .name("HTTP".into())
             .spawn(move || unsafe {

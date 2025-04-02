@@ -6,6 +6,7 @@
 #![allow(clippy::borrowed_box)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::new_without_default)]
+#![deny(clippy::clone_on_ref_ptr)]
 #![deny(clippy::cloned_instead_of_copied)]
 #![deny(clippy::default_trait_access)]
 #![deny(clippy::flat_map_option)]

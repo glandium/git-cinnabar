@@ -327,7 +327,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         proc,
         thread: None,
         url: url.clone(),
-        synchronizer: synchronizer.clone(),
+        synchronizer: Arc::clone(&synchronizer),
     };
 
     conn.thread = Some(
