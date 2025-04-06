@@ -399,7 +399,7 @@ impl<I: Iterator, B, F: FnMut(I::Item) -> Result<B, bool>> Iterator for FilterMa
             match (self.f)(self.iter.next()?) {
                 Ok(item) => return Some(item),
                 Err(true) => return None,
-                Err(false) => continue,
+                Err(false) => {}
             }
         }
     }

@@ -1613,7 +1613,7 @@ fn create_git_tree(
         // though, both will have the same contents. At least for files.
         // Sub-directories may differ in what paths they contain, but
         // again, the files they contain are usually identical.
-        if path.len() == 0 {
+        if path.is_empty() {
             if entry.is_right() {
                 corrupted_metata();
             }

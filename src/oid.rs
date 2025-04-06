@@ -189,7 +189,7 @@ impl<O: ObjectId> std::fmt::Display for Abbrev<O> {
                 <= BUF_LEN
         );
         let mut hex = [0u8; BUF_LEN];
-        let len = (self.len + 1) / 2;
+        let len = self.len.div_ceil(2);
         hex::encode_to_slice(&self.oid.as_raw_bytes()[..len], &mut hex[..len * 2]).unwrap();
         f.write_str(str::from_utf8(&hex[..self.len]).unwrap())
     }
