@@ -261,8 +261,15 @@ def maybe_int(s):
         return s
 
 
+def removeprefix(self, prefix):
+    if self.startswith(prefix):
+        return self[len(prefix) :]
+    else:
+        return self[:]
+
+
 def split_version(s):
-    s = s.decode("ascii").removeprefix("v")
+    s = removeprefix(s.decode("ascii"), "v")
     version = [x.replace("-", "").replace(".", "") for x in re.split(r"([0-9]+)", s)]
     version = [maybe_int(x) for x in version if x]
     if isinstance(version[-1], int):
@@ -322,7 +329,7 @@ def find_tag(exact, locally):
         ]
         if matches:
             return (
-                matches[0][1].decode("ascii").removeprefix("refs/tags/"),
+                removeprefix(matches[0][1].decode("ascii"), "refs/tags/"),
                 matches[0][0].decode("ascii"),
             )
     else:
