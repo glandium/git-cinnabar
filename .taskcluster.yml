@@ -5,8 +5,8 @@ tasks:
     $let:
       e:
         repo_name: ${event.repository.name}
-        repo_url: ${event.repository.url}
-        base_repo_url: ${event.repository.url}
+        repo_url: ${event.repository.html_url}
+        base_repo_url: ${event.repository.html_url}
         login: ${event.pusher.name}
         commit: ${event.after}
         branch:
