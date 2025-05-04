@@ -1840,6 +1840,81 @@ fn do_rollback(
 }
 
 #[allow(clippy::unnecessary_wraps)]
+fn do_strip(store: &mut Store, committish: Vec<OsString>) -> Result<(), String> {
+    if committish.is_empty() {
+        return Ok(());
+    }
+    let committish = committish
+        .into_iter()
+        .map(|c| {
+            get_oid_committish(c.as_bytes())
+                .or_else(|| {
+                    Abbrev::<HgChangesetId>::from_bytes(c.as_bytes())
+                        .ok()
+                        .and_then(|cs| cs.to_git(store).map(Into::into))
+                })
+                .map(lookup_replace_commit)
+                .map(GitChangesetId::from_unchecked)
+                .ok_or_else(|| format!("bad revision '{}'", c.as_bytes().as_bstr()))
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+
+    let args = ["--ancestry-path".to_string(), format!("{METADATA_REF}^^@")]
+        .into_iter()
+        .chain(committish.iter().map(|c| format!("^{c}")));
+
+    for (c, boundary) in rev_list_with_boundaries(args) {
+        let cid = GitChangesetId::from_unchecked(c);
+        if let Some(csid) = cid.to_hg(store) {
+            let strip = match boundary {
+                MaybeBoundary::Boundary => committish.contains(&cid),
+                MaybeBoundary::Commit => true,
+                _ => false,
+            };
+            if strip {
+                store.set(SetWhat::ChangesetMeta, csid.into(), GitObjectId::NULL);
+                store.set(SetWhat::Changeset, csid.into(), GitObjectId::NULL);
+            }
+        }
+    }
+
+    let mut changeset_heads = ChangesetHeads::new();
+
+    for (c, parents) in rev_list_with_parents([
+        "--full-history".to_string(),
+        "--reverse".to_string(),
+        "--topo-order".to_string(),
+        format!("{METADATA_REF}^^@"),
+    ]) {
+        let cid = GitChangesetId::from_unchecked(c);
+        if let Some(metadata) = RawGitChangesetMetadata::read(store, cid) {
+            let metadata = metadata.parse().unwrap();
+            let csid = metadata.changeset_id();
+
+            let parents = parents
+                .iter()
+                .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store).unwrap())
+                .collect_vec();
+            changeset_heads.add(
+                csid,
+                &parents,
+                metadata
+                    .extra()
+                    .and_then(|e| e.get(b"branch"))
+                    .unwrap_or(b"default")
+                    .as_bstr(),
+            );
+        }
+    }
+
+    set_changeset_heads(store, changeset_heads);
+
+    do_done_and_check(store, &[])
+        .then_some(())
+        .ok_or_else(|| "Fatal error".to_string())
+}
+
+#[allow(clippy::unnecessary_wraps)]
 fn do_upgrade() -> Result<(), String> {
     // If we got here, init_cinnabar_2/init_metadata went through,
     // which means we didn't die because of unusable metadata.
@@ -3842,6 +3917,8 @@ enum CinnabarCommand {
         #[arg(value_parser)]
         committish: Option<OsString>,
     },
+    #[command(skip)]
+    Strip(StripCommand),
     /// Check cinnabar metadata consistency
     #[command(name = "fsck")]
     Fsck {
@@ -3938,6 +4015,14 @@ struct TagCommand {
     committish: Option<OsString>,
 }
 
+/// Strip cinnabar metadata for commits and their descendants
+#[derive(Parser)]
+#[command(name = "strip")]
+struct StripCommand {
+    /// Commits to strip (can be either git commits or a mercurial changesets)
+    committish: Vec<OsString>,
+}
+
 struct AllCommand(CinnabarCommand);
 
 impl CommandFactory for AllCommand {
@@ -3945,6 +4030,9 @@ impl CommandFactory for AllCommand {
         let mut command = CinnabarCommand::command();
         if experiment(Experiments::TAG) {
             command = command.subcommand(TagCommand::command());
+        }
+        if experiment(Experiments::STRIP) {
+            command = command.subcommand(StripCommand::command());
         }
         command
     }
@@ -3962,6 +4050,10 @@ impl FromArgMatches for AllCommand {
                     if let Some((name, matches)) = matches.subcommand() {
                         if name == "tag" && experiment(Experiments::TAG) {
                             return TagCommand::from_arg_matches(matches).map(CinnabarCommand::Tag);
+                        }
+                        if name == "strip" && experiment(Experiments::STRIP) {
+                            return StripCommand::from_arg_matches(matches)
+                                .map(CinnabarCommand::Strip);
                         }
                     }
                 }
@@ -4081,6 +4173,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             force,
             committish,
         } => do_rollback(candidates, fsck, force, committish),
+        Strip(StripCommand { committish }) => do_strip(&mut store, committish),
         Upgrade => do_upgrade(),
         Unbundle { clonebundle, url } => do_unbundle(&mut store, clonebundle, url),
         Fsck {
@@ -5439,6 +5532,7 @@ bitflags! {
         const GIT_COMMIT = 0x2;
         const TAG = 0x4;
         const BRANCH = 0x8;
+        const STRIP = 0x10;
         const TEST = 0x100;
     }
 }
@@ -5467,6 +5561,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"branch" => {
                     flags |= Experiments::BRANCH;
+                }
+                b"strip" => {
+                    flags |= Experiments::STRIP;
                 }
                 b"test" => {
                     flags |= Experiments::TEST;
