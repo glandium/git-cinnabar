@@ -4826,7 +4826,13 @@ fn remote_helper_push(
                     RefCell::new(get_branch(*c).or_else(|| {
                         p.first().and_then(|p| {
                             dag.get(*p)
-                                .and_then(|(_, b)| b.clone().into_inner())
+                                .and_then(|(_, b)| {
+                                    b.clone().into_inner().map(|b| match b {
+                                        BranchInfo::Inferred(b) => BranchInfo::Inferred(b),
+                                        BranchInfo::Known(b) => BranchInfo::Inferred(b),
+                                        BranchInfo::Set(_) => unreachable!(),
+                                    })
+                                })
                                 .or_else(|| {
                                     get_branch(*p).map(|b| BranchInfo::Inferred(b.unwrap()))
                                 })

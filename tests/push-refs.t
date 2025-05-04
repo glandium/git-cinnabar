@@ -365,6 +365,24 @@ Force push `f`.
   0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
+  $ git -c cinnabar.experiments=strip -C repo-git2 cinnabar strip ceb496b41c51e93d51a8d6b211ddd0c6458975ed
+  Updating metadata...
+
+  $ hg init $REPO-from-git3
+  $ git -c cinnabar.experiments=branch -C repo-git2 push hg::$REPO-from-git3 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 4 changesets with 4 changes to 4 files
+  To hg::.*/push-refs.t/repo-from-git3 (re)
+   * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
+
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote hg::$REPO-from-git3
+  7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/default/ae078ae353a9b004afbd6fd6e5e7a5a0a48a4307
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+
 Removing heads or branches is not supported.
 
   $ git -C repo-git push origin :branches/default/636e60525868096cbdc961870493510558f41d2f
