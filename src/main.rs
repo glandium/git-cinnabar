@@ -1893,7 +1893,11 @@ fn do_strip(store: &mut Store, committish: Vec<OsString>) -> Result<(), String> 
 
             let parents = parents
                 .iter()
-                .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store).unwrap())
+                .map(|p| {
+                    GitChangesetId::from_unchecked(lookup_replace_commit(*p))
+                        .to_hg(store)
+                        .unwrap()
+                })
                 .collect_vec();
             changeset_heads.add(
                 csid,
