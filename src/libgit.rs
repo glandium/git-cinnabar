@@ -314,12 +314,14 @@ impl<T: ?Sized> Drop for FfiBox<T> {
     }
 }
 
-impl From<strbuf> for FfiBox<[u8]> {
+impl From<strbuf> for Option<FfiBox<[u8]>> {
     fn from(value: strbuf) -> Self {
-        let ptr = value.buf as *mut _;
-        let len = value.len;
-        mem::forget(value);
-        unsafe { FfiBox::from_raw_parts(ptr, len) }
+        (value.len != 0).then(|| {
+            let ptr = value.buf as *mut _;
+            let len = value.len;
+            mem::forget(value);
+            unsafe { FfiBox::from_raw_parts(ptr, len) }
+        })
     }
 }
 

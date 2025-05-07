@@ -128,7 +128,7 @@ impl FromIterator<WithPath<TreeEntry>> for RawTree {
             tree_buf.extend_from_slice(b"\0");
             tree_buf.extend_from_slice(oid.as_raw_bytes());
         }
-        RawTree(Some(tree_buf.into()))
+        RawTree(tree_buf.into())
     }
 }
 
