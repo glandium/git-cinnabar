@@ -724,11 +724,14 @@ fn do_tag(
     };
     let head = if let Some(onto) = &onto {
         resolve_ref(onto)
-            .ok_or_else(|| format!("Couldn't resolve {}", onto.as_bytes().as_bstr()))?
     } else {
-        resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD")
+        Some(resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD"))
     };
-    let tree = RawTree::read_treeish(head).unwrap();
+    let tree = if let Some(head) = head {
+        RawTree::read_treeish(head).unwrap()
+    } else {
+        [].into_iter().collect::<RawTree>()
+    };
     let new_tree = merge_join_by_path(
         tree,
         [WithPath::new(
@@ -792,8 +795,10 @@ fn do_tag(
     let mut buf = Vec::new();
     buf.extend_from_slice(b"tree ");
     buf.extend_from_slice(tree_id.to_string().as_bytes());
-    buf.extend_from_slice(b"\nparent ");
-    buf.extend_from_slice(head.to_string().as_bytes());
+    if let Some(head) = head {
+        buf.extend_from_slice(b"\nparent ");
+        buf.extend_from_slice(head.to_string().as_bytes());
+    }
     buf.extend_from_slice(b"\nauthor ");
     buf.extend_from_slice(&git_author_info());
     buf.extend_from_slice(b"\ncommitter ");
@@ -826,7 +831,7 @@ fn do_tag(
         // TODO: check that the branch is not checked out anywhere.
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update(onto, new_cid, Some(head), "git cinnabar tag")
+            .update(onto, new_cid, head, "git cinnabar tag")
             .unwrap();
         transaction.commit().unwrap();
         Ok(())
