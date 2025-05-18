@@ -151,12 +151,6 @@ fn main() {
         } else {
             None
         },
-        std::env::var("DEP_CURL_INCLUDE")
-            .map(|i| format!("-I{}", normalize_path(&i)))
-            .ok(),
-        std::env::var("DEP_CURL_STATIC")
-            .map(|_| "-DCURL_STATICLIB".to_string())
-            .ok(),
         std::env::var("DEP_Z_INCLUDE")
             .map(|i| format!("-I{}", normalize_path(&i)))
             .ok(),
@@ -179,6 +173,21 @@ fn main() {
     cmd.arg(format!("CFLAGS={}", cflags));
     cmd.arg(format!("CC={}", compiler.path().display()));
     cmd.arg(format!("AR={}", ar.get_program().to_str().unwrap()));
+
+    let curl_cflags = [
+        std::env::var("DEP_CURL_INCLUDE")
+            .map(|i| format!("-I{}", normalize_path(&i)))
+            .ok(),
+        std::env::var("DEP_CURL_STATIC")
+            .map(|_| "-DCURL_STATICLIB".to_string())
+            .ok(),
+    ]
+    .iter()
+    .filter_map(Option::as_deref)
+    .join(" ");
+    if !curl_cflags.is_empty() {
+        cmd.arg(format!("CURL_CFLAGS={}", curl_cflags));
+    }
 
     let compile_commands =
         cfg!(feature = "compile_commands") || std::env::var("VSCODE_PID").is_ok();
