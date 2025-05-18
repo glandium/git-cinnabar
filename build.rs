@@ -125,7 +125,8 @@ fn main() {
 
     let mut make = gnu_make();
     let cmd = prepare_make(&mut make);
-    cmd.arg("libcinnabar.a")
+    cmd.arg("GIT-VERSION-FILE").arg("libcinnabar.a")
+        .arg("--trace")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
         .arg("LAZYLOAD_LIBCURL=")
@@ -259,7 +260,7 @@ fn main() {
     }
 
     assert!(cmd
-        .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
+        .env("MAKEFLAGS", "-j1")
         .current_dir(&out_dir)
         .status()
         .expect("Failed to execute GNU make")
