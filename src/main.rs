@@ -3189,7 +3189,7 @@ fn do_fsck(
         for (path, (hg_file, hg_fileparents)) in
             get_changes(mid, &parents, true).map(WithPath::unzip)
         {
-            if hg_fileparents.iter().any(|p| *p == hg_file) {
+            if hg_fileparents.contains(&hg_file) {
                 continue;
             }
             // Reaching here means the file received a modification compared

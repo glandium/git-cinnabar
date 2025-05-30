@@ -101,7 +101,7 @@ impl strbuf {
     pub fn reset(&mut self) {
         self.len = 0;
         unsafe {
-            if self.buf != strbuf_slopbuf.as_ptr() as *mut _ {
+            if !std::ptr::eq(self.buf, strbuf_slopbuf.as_ptr()) {
                 *self.buf = 0;
             }
         }

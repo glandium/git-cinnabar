@@ -392,13 +392,10 @@ impl<'a> BundleReader<'a> {
             Some(b"BZ") => Box::new(BzDecoder::new(reader)),
             Some(b"ZS") => Box::new(ZstdDecoder::new(reader).unwrap()),
             Some(comp) => {
-                return Err(io::Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "Unknown mercurial bundle compression: {}",
-                        String::from_utf8_lossy(comp)
-                    ),
-                ))
+                return Err(io::Error::other(format!(
+                    "Unknown mercurial bundle compression: {}",
+                    String::from_utf8_lossy(comp)
+                )))
             }
             None => Box::from(reader),
         };
@@ -417,13 +414,10 @@ impl<'a> BundleReader<'a> {
             b"BZ" => Box::new(BzDecoder::new(Cursor::new(compression).chain(reader))),
             b"UN" => Box::from(reader),
             comp => {
-                return Err(io::Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "Unknown mercurial bundle compression: {}",
-                        String::from_utf8_lossy(comp)
-                    ),
-                ))
+                return Err(io::Error::other(format!(
+                    "Unknown mercurial bundle compression: {}",
+                    String::from_utf8_lossy(comp)
+                )))
             }
         };
         Ok(BundleReader {

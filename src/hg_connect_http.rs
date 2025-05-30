@@ -530,8 +530,7 @@ impl Read for HttpResponse {
                     drop(self.receiver.take());
                     if let Some(thread) = self.thread.take() {
                         thread.join().unwrap().map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::Other,
+                            io::Error::other(
                                 unsafe { CStr::from_ptr(curl_errorstr.as_ptr()) }.to_string_lossy(),
                             )
                         })?;
