@@ -28,7 +28,7 @@ jobs:
           components: clippy
       - uses: msys2/setup-msys2@v2
         with:
-          release: false
+          release: true
           update: false
           msystem: MINGW64
           install: >-
@@ -91,7 +91,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - uses: msys2/setup-msys2@v2
         with:
-          release: false
+          release: true
           update: false
           msystem: MINGW64
           install: >-
