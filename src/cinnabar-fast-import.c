@@ -264,13 +264,13 @@ void do_set_replace(const struct object_id *replaced,
 	struct replace_object *replace;
 
 	if (is_null_oid(replace_with)) {
-		oidmap_remove(the_repository->objects->replace_map, replaced);
+		oidmap_remove(&the_repository->objects->replace_map, replaced);
 	} else {
 		struct replace_object *old;
 		replace = xmalloc(sizeof(*replace));
 		oidcpy(&replace->original.oid, replaced);
 		oidcpy(&replace->replacement, replace_with);
-		old = oidmap_put(the_repository->objects->replace_map, replace);
+		old = oidmap_put(&the_repository->objects->replace_map, replace);
 		if (old)
 			free(old);
 	}
@@ -547,7 +547,7 @@ void store_replace_map(struct object_id *result) {
 	struct oidmap_iter iter;
 	struct replace_object *replace;
 
-	oidmap_iter_init(the_repository->objects->replace_map, &iter);
+	oidmap_iter_init(&the_repository->objects->replace_map, &iter);
 	while ((replace = oidmap_iter_next(&iter))) {
 		strbuf_addf(&buf, "160000 %s%c",
 		            oid_to_hex(&replace->original.oid), '\0');

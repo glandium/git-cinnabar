@@ -67,7 +67,7 @@ struct rev_info *rev_list_new(int argc, const char **argv) {
 void rev_list_finish(struct rev_info *revs) {
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
-	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
+	clear_object_flags(the_repository, ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
 	release_revisions(revs);
 	free(revs);
 }
@@ -171,27 +171,24 @@ const struct object_id *repo_lookup_replace_object(
 
 void init_replace_map(void)
 {
-	the_repository->objects->replace_map =
-		xmalloc(sizeof(*the_repository->objects->replace_map));
-	oidmap_init(the_repository->objects->replace_map, 0);
+	oidmap_init(&the_repository->objects->replace_map, 0);
 	the_repository->objects->replace_map_initialized = 1;
 }
 
 void reset_replace_map(void)
 {
-	oidmap_free(the_repository->objects->replace_map, 1);
-	FREE_AND_NULL(the_repository->objects->replace_map);
+	oidmap_clear(&the_repository->objects->replace_map, 1);
 	the_repository->objects->replace_map_initialized = 0;
 }
 
 unsigned int replace_map_size(void)
 {
-	return hashmap_get_size(&the_repository->objects->replace_map->map);
+	return hashmap_get_size(&the_repository->objects->replace_map.map);
 }
 
 unsigned int replace_map_tablesize(void)
 {
-	return the_repository->objects->replace_map->map.tablesize;
+	return the_repository->objects->replace_map.map.tablesize;
 }
 
 static void init_git_config(void)

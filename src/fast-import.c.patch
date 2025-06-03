@@ -1,5 +1,5 @@
 diff --git a/builtin/fast-import.c b/builtin/fast-import.c
-index 397a6f46ad..0ae561a80b 100644
+index b2839c5f43..1feeaf0ec1 100644
 --- a/builtin/fast-import.c
 +++ b/builtin/fast-import.c
 @@ -29,6 +29,7 @@
@@ -19,7 +19,7 @@ index 397a6f46ad..0ae561a80b 100644
  {
  	struct strbuf tmp_file = STRBUF_INIT;
  	struct packed_git *p;
-@@ -859,7 +860,7 @@ static int loosen_small_pack(const struct packed_git *p)
+@@ -860,7 +861,7 @@ static int loosen_small_pack(const struct packed_git *p)
  	return run_command(&unpack);
  }
  
@@ -28,7 +28,7 @@ index 397a6f46ad..0ae561a80b 100644
  {
  	static int running;
  
-@@ -878,6 +879,7 @@ static void end_packfile(void)
+@@ -879,6 +880,7 @@ static void end_packfile(void)
  
  		close_pack_windows(pack_data);
  		finalize_hashfile(pack_file, cur_pack_oid.hash, FSYNC_COMPONENT_PACK, 0);
@@ -36,7 +36,7 @@ index 397a6f46ad..0ae561a80b 100644
  		fixup_pack_header_footer(the_hash_algo, pack_data->pack_fd,
  					 pack_data->hash, pack_data->pack_name,
  					 object_count, cur_pack_oid.hash,
-@@ -977,6 +979,9 @@ static int store_object(
+@@ -978,6 +980,9 @@ static int store_object(
  		e->pack_id = MAX_PACK_ID;
  		e->idx.offset = 1; /* just not zero! */
  		duplicate_count_by_type[type]++;

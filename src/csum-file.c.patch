@@ -1,8 +1,8 @@
 diff --git a/csum-file.c b/csum-file.c
-index 2131ee6b12..f31d551613 100644
+index 6e21e3cac8..1a4ea61237 100644
 --- a/csum-file.c
 +++ b/csum-file.c
-@@ -111,7 +111,8 @@ void discard_hashfile(struct hashfile *f)
+@@ -110,7 +110,8 @@ void discard_hashfile(struct hashfile *f)
  	free_hashfile(f);
  }
  

@@ -133,7 +133,7 @@ int cinnabar_remove_note(struct cinnabar_notes_tree *t,
 	if (!result) {
 		struct object_id oid;
 		oidread(&oid, object_sha1, the_repository->hash_algo);
-		add_note(&t->additions, &oid, null_oid(), NULL);
+		add_note(&t->additions, &oid, null_oid(the_repository->hash_algo), NULL);
 	}
 	return result && result2;
 }

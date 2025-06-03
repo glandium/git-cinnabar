@@ -222,7 +222,6 @@ pub struct object_info {
     sizep: *mut c_ulong,
     disk_sizep: *mut u64,
     delta_base_oid: *mut object_id,
-    type_name: *mut strbuf,
     contentp: *mut *mut c_void,
     whence: c_int, // In reality, it's an inline enum.
     // In reality, following is a union with one struct.
@@ -238,7 +237,6 @@ impl Default for object_info {
             sizep: std::ptr::null_mut(),
             disk_sizep: std::ptr::null_mut(),
             delta_base_oid: std::ptr::null_mut(),
-            type_name: std::ptr::null_mut(),
             contentp: std::ptr::null_mut(),
             whence: 0,
             u_packed_pack: std::ptr::null_mut(),
