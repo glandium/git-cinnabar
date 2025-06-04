@@ -510,7 +510,7 @@ class Build(Task, metaclass=Tool):
             self,
             task_env=build_env,
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
-            index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
+            index="build.{}.{}{}.{}".format(env.os, cpu, prefix(".", variant), hash),
             command=Task.checkout(commit=head)
             + sdk_install
             + rust_install
