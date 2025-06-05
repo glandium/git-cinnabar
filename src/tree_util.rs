@@ -153,7 +153,7 @@ fn test_cmp_path() {
     }
 
     let examples = ["foo", "bar", "foobar", "foo.bar", "foo_", "foo.", "qux"];
-    let example_dirs = examples.iter().map(|x| format!("{}/", x)).collect_vec();
+    let example_dirs = examples.iter().map(|x| format!("{x}/")).collect_vec();
     let all_examples = example_dirs.iter().map(|x| &**x).chain(examples);
 
     for (a, b) in Itertools::cartesian_product(all_examples.clone(), all_examples) {
@@ -165,9 +165,7 @@ fn test_cmp_path() {
         assert_eq!(
             WithPath::cmp_path(&a_path, &b_path),
             expected,
-            "comparing {} and {}",
-            a,
-            b
+            "comparing {a} and {b}"
         );
     }
 }

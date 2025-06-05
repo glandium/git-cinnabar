@@ -311,7 +311,7 @@ fn do_data_changeset(store: &Store, rev: Abbrev<HgChangesetId>) -> Result<(), St
     let changeset = RawHgChangeset::read(
         store,
         rev.to_git(store)
-            .ok_or_else(|| format!("Unknown changeset id: {}", rev))?,
+            .ok_or_else(|| format!("Unknown changeset id: {rev}"))?,
     )
     .unwrap();
     stdout().write_all(&changeset).map_err(|e| e.to_string())
@@ -320,7 +320,7 @@ fn do_data_changeset(store: &Store, rev: Abbrev<HgChangesetId>) -> Result<(), St
 fn do_data_manifest(store: &Store, rev: Abbrev<HgManifestId>) -> Result<(), String> {
     let manifest = RawHgManifest::read(
         rev.to_git(store)
-            .ok_or_else(|| format!("Unknown manifest id: {}", rev))?,
+            .ok_or_else(|| format!("Unknown manifest id: {rev}"))?,
     )
     .unwrap();
     stdout().write_all(&manifest).map_err(|e| e.to_string())
@@ -628,7 +628,7 @@ fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> 
             _ => None,
         })
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| format!("Invalid format: {}", format))?;
+        .ok_or_else(|| format!("Invalid format: {format}"))?;
     let mut stdout = stdout();
     for (tag, c) in store.get_tags().iter().sorted() {
         for (n, format_item) in format.iter().enumerate() {
@@ -643,7 +643,7 @@ fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> 
                     c.to_git(store).unwrap_or(GitChangesetId::NULL)
                 )
                 .unwrap(),
-                TagFormatItem::HgObjectName => write!(stdout, "{}", c).unwrap(),
+                TagFormatItem::HgObjectName => write!(stdout, "{c}").unwrap(),
             }
         }
         stdout.write_all(b"\n").unwrap();
@@ -668,10 +668,10 @@ fn validate_label(label: &[u8], typ: &str) -> Result<(), String> {
             typ
         )),
         _ if label.iter().all(u8::is_ascii_digit) => {
-            Err(format!("Cannot use an integer as a {} name", typ))
+            Err(format!("Cannot use an integer as a {typ} name"))
         }
         _ if label.trim_with(|x| x.is_ascii_whitespace()) != label => {
-            Err(format!("Leading or trailing whitespace in {} name", typ))
+            Err(format!("Leading or trailing whitespace in {typ} name"))
         }
         _ => Ok(()),
     }
@@ -716,7 +716,7 @@ fn do_tag(
             .ok_or_else(|| format!("bad revision '{}'", committish.as_bstr()))?;
         let csid = commit
             .to_hg(store)
-            .ok_or_else(|| format!("{} is not on a Mercurial repository (yet?)", commit))?;
+            .ok_or_else(|| format!("{commit} is not on a Mercurial repository (yet?)"))?;
         (
             current_csid.or_else(|| tags.ever_contained(tag).then_some(HgChangesetId::NULL)),
             csid,
@@ -770,12 +770,12 @@ fn do_tag(
                 new_hgtags.push(b'\n');
             }
             if let Some(current_csid) = current_csid {
-                write!(&mut new_hgtags, "{}", current_csid).unwrap();
+                write!(&mut new_hgtags, "{current_csid}").unwrap();
                 new_hgtags.push(b' ');
                 new_hgtags.extend_from_slice(tag);
                 new_hgtags.push(b'\n');
             }
-            write!(&mut new_hgtags, "{}", new_csid).unwrap();
+            write!(&mut new_hgtags, "{new_csid}").unwrap();
             new_hgtags.push(b' ');
             new_hgtags.extend_from_slice(tag);
             new_hgtags.push(b'\n');
@@ -857,7 +857,7 @@ fn do_fetch(
     let hg_url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
     let mut conn = hg_connect::get_connection(&hg_url)
-        .ok_or_else(|| format!("Failed to connect to {}", hg_url))?;
+        .ok_or_else(|| format!("Failed to connect to {hg_url}"))?;
     if bundle {
         conn = Box::new(BundleSaverConnection(conn));
     }
@@ -888,11 +888,10 @@ fn do_fetch(
                 }
                 Err(_) => Err(format!(
                     "Remote repository does not support the \"lookup\" command. \
-                    Cannot fetch {}.",
-                    s
+                    Cannot fetch {s}."
                 )),
             },
-            Cow::Owned(s) => Err(format!("Invalid character in revision: {}", s)),
+            Cow::Owned(s) => Err(format!("Invalid character in revision: {s}")),
         })
         .collect::<Result<Vec<_>, _>>()?;
     let unknown = revs
@@ -910,7 +909,7 @@ fn do_fetch(
                 .next()
         });
     if let Some(unknown) = unknown {
-        return Err(format!("Unknown revision: {}", unknown));
+        return Err(format!("Unknown revision: {unknown}"));
     }
     let full_revs = revs.iter().map(|r| r.either(|h| h, |h| h)).collect_vec();
 
@@ -951,7 +950,7 @@ fn do_fetch(
             .iter()
             .map(|rev| {
                 let git_rev = rev.to_git(store).unwrap();
-                writeln!(fetch_head, "{}\t\t'hg/revs/{}' of {}", git_rev, rev, url).unwrap();
+                writeln!(fetch_head, "{git_rev}\t\t'hg/revs/{rev}' of {url}").unwrap();
                 get_unique_abbrev(git_rev).len()
             })
             .max()
@@ -963,7 +962,7 @@ fn do_fetch(
             .and_then(|mut f| f.write(&fetch_head))
             .map_err(|e| e.to_string())?;
 
-        eprintln!("From {}", url);
+        eprintln!("From {url}");
         for rev in full_revs {
             eprintln!(" * {:width$} hg/revs/{} -> FETCH_HEAD", "branch", rev);
         }
@@ -1107,10 +1106,7 @@ fn set_metadata_to(
                 .flatten()
             })
             .ok_or_else(|| {
-                format!(
-                    "Cannot rollback to {}, it is not in the ancestry of current metadata.",
-                    new
-                )
+                format!("Cannot rollback to {new}, it is not in the ancestry of current metadata.")
             })?;
         // And just in case, check we got what we were looking for. Any error
         // should already have been returned by the `?` above.
@@ -1129,12 +1125,12 @@ fn set_metadata_to(
         let commit = RawCommit::read(new).unwrap();
         let commit = commit.parse().unwrap();
         if commit.author() != b" <cinnabar@git> 0 +0000" {
-            return Err(format!("Invalid cinnabar metadata: {}", new));
+            return Err(format!("Invalid cinnabar metadata: {new}"));
         }
         transaction.update(METADATA_REF, new, metadata, msg)?;
         transaction.update(NOTES_REF, commit.parents()[3], notes, msg)?;
         for (path, item) in RawTree::read(commit.tree())
-            .ok_or_else(|| format!("Failed to read metadata: {}", new))?
+            .ok_or_else(|| format!("Failed to read metadata: {new}"))?
             .into_iter()
             .recurse()
             .map(WithPath::unzip)
@@ -1462,7 +1458,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                         (
                             Either::Left(b"(none)".as_bstr().to_boxed()),
                             Some(
-                                format!("hg/revs/{}", csid)
+                                format!("hg/revs/{csid}")
                                     .into_bytes()
                                     .into_boxed_slice()
                                     .into(),
@@ -1603,7 +1599,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         let mut other_transactions = Vec::new();
         let mut out = Vec::new();
         for (category, update_refs) in update_refs_by_category {
-            writeln!(out, "{}", category).unwrap();
+            writeln!(out, "{category}").unwrap();
             let update_refs = update_refs
                 .into_iter()
                 .sorted_by(|(peer_ref_a, _, _, _), (peer_ref_b, _, _, _)| {
@@ -1689,14 +1685,14 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                         if unsafe { repo_in_merge_bases(the_repository, commit, old_commit) } == 0 {
                             (
                                 '+',
-                                format!("{}...{}", abbrev_old_cid, abbrev_cid),
+                                format!("{abbrev_old_cid}...{abbrev_cid}"),
                                 "  (forced update)",
                                 "forced-update",
                             )
                         } else {
                             (
                                 ' ',
-                                format!("{}..{}", abbrev_old_cid, abbrev_cid),
+                                format!("{abbrev_old_cid}..{abbrev_cid}"),
                                 "",
                                 "fast-forward",
                             )
@@ -1706,8 +1702,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                     };
                     writeln!(
                         out,
-                        " {code} {from_to:width$} {:refwidth$} -> {}{extra}",
-                        pretty_refname, pretty_peer_ref
+                        " {code} {from_to:width$} {pretty_refname:refwidth$} -> {pretty_peer_ref}{extra}"
                     )
                     .unwrap();
                     let msg = format!("cinnabar reclone: {msg}");
@@ -1800,14 +1795,14 @@ fn do_rollback(
             .collect_vec();
         let mut metadata = metadata;
         while let Some(m) = metadata {
-            print!("{}", m);
+            print!("{m}");
             let matched_labels = labels
                 .iter()
                 .filter_map(|(name, cid)| (*cid == m).then_some(*name))
                 .collect_vec()
                 .join(", ");
             if !matched_labels.is_empty() {
-                print!(" ({})", matched_labels);
+                print!(" ({matched_labels})");
             }
             println!();
             metadata = get_previous_metadata(m);
@@ -2217,7 +2212,7 @@ fn do_data_file(store: &Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
     let mut stdout = stdout();
     let file_id = rev
         .to_git(store)
-        .ok_or_else(|| format!("Unknown file id: {}", rev))?;
+        .ok_or_else(|| format!("Unknown file id: {rev}"))?;
     let metadata_id = store
         .files_meta_mut()
         .get_note_abbrev(rev)
@@ -2261,7 +2256,7 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
         // Release the connection now, so that its cleanup doesn't conflict
         // with get_bundle_connection.  Yes, this API sucks.
         std::mem::drop(conn);
-        eprintln!("Getting clone bundle from {}", url);
+        eprintln!("Getting clone bundle from {url}");
         get_bundle_connection(&url).unwrap()
     } else {
         get_connection(&url).unwrap()
@@ -2345,7 +2340,7 @@ fn create_copy(
     metadata.extend_from_slice(b"copy: ");
     metadata.extend_from_slice(source_path);
     metadata.extend_from_slice(b"\ncopyrev: ");
-    write!(metadata, "{}", source_fid).unwrap();
+    write!(metadata, "{source_fid}").unwrap();
     metadata.extend_from_slice(b"\n");
 
     let mut hash = HgFileId::create();
@@ -2923,7 +2918,7 @@ fn do_fsck(
 
     let broken = Cell::new(false);
     let report = |s| {
-        eprintln!("\r{}", s);
+        eprintln!("\r{s}");
         broken.set(true);
     };
 
@@ -2946,8 +2941,7 @@ fn do_fsck(
             git_cid
         } else {
             report(format!(
-                "Missing hg2git metadata for changeset {}",
-                changeset_node
+                "Missing hg2git metadata for changeset {changeset_node}"
             ));
             continue;
         };
@@ -2956,9 +2950,8 @@ fn do_fsck(
             if !parents.contains(&CommitId::from(git_cid)) {
                 report(format!(
                     "Inconsistent metadata:\n\
-                     \x20 Head metadata says changeset {} maps to {}\n
-                     \x20 but hg2git metadata says it maps to {}",
-                    changeset_node, c, git_cid
+                     \x20 Head metadata says changeset {changeset_node} maps to {c}\n
+                     \x20 but hg2git metadata says it maps to {git_cid}"
                 ));
                 continue;
             }
@@ -2968,7 +2961,7 @@ fn do_fsck(
         let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(store, git_cid) {
             metadata
         } else {
-            report(format!("Missing git2hg metadata for git commit {}", c));
+            report(format!("Missing git2hg metadata for git commit {c}"));
             continue;
         };
         let metadata = metadata.parse().unwrap();
@@ -3005,7 +2998,7 @@ fn do_fsck(
         sha1.update(&*raw_changeset);
         let sha1 = sha1.finalize();
         if changeset_node.as_raw_bytes() != sha1.as_slice() {
-            report(format!("Sha1 mismatch for changeset {}", changeset_node,));
+            report(format!("Sha1 mismatch for changeset {changeset_node}",));
             continue;
         }
         let changeset = raw_changeset.parse().unwrap();
@@ -3017,9 +3010,8 @@ fn do_fsck(
         if branch != changeset_branch {
             report(format!(
                 "Inconsistent metadata:\n\
-                 \x20 Head metadata says changeset {} is in branch {}\n\
-                 \x20 but git2hg metadata says it is in branch {}",
-                changeset_node, branch, changeset_branch
+                 \x20 Head metadata says changeset {changeset_node} is in branch {branch}\n\
+                 \x20 but git2hg metadata says it is in branch {changeset_branch}"
             ));
             continue;
         }
@@ -3047,8 +3039,8 @@ fn do_fsck(
     let mut depths = BTreeMap::new();
     let mut roots = BTreeSet::new();
     let mut manifest_queue = Vec::new();
-    let manifests_arg = format!("{}^@", manifests_cid);
-    let checked_manifests_arg = checked_manifests_cid.map(|c| format!("^{}^@", c));
+    let manifests_arg = format!("{manifests_cid}^@");
+    let checked_manifests_arg = checked_manifests_cid.map(|c| format!("^{c}^@"));
     let mut args = vec![
         "--topo-order",
         "--reverse",
@@ -3099,28 +3091,26 @@ fn do_fsck(
         let hg_manifest_id = if let Ok(id) = HgManifestId::from_bytes(commit.body()) {
             id
         } else {
-            report(format!("Invalid manifest metadata in git commit {}", mid));
+            report(format!("Invalid manifest metadata in git commit {mid}"));
             continue;
         };
         let git_mid = if let Some(id) = hg_manifest_id.to_git(store) {
             id
         } else {
             report(format!(
-                "Missing hg2git metadata for manifest {}",
-                hg_manifest_id
+                "Missing hg2git metadata for manifest {hg_manifest_id}"
             ));
             continue;
         };
         if mid != git_mid {
             report(format!(
                 "Inconsistent metadata:\n\
-                 \x20 Manifest DAG contains {} for manifest {}\n
-                 \x20 but hg2git metadata says the manifest maps to {}",
-                mid, hg_manifest_id, git_mid
+                 \x20 Manifest DAG contains {mid} for manifest {hg_manifest_id}\n
+                 \x20 but hg2git metadata says the manifest maps to {git_mid}"
             ));
         }
         if unsafe { check_manifest(&object_id::from(git_mid)) } != 1 {
-            report(format!("Sha1 mismatch for manifest {}", git_mid));
+            report(format!("Sha1 mismatch for manifest {git_mid}"));
         }
         let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
             let a = GitManifestTree::read_treeish(GitManifestId::from_unchecked(previous)).unwrap();
@@ -3292,7 +3282,7 @@ fn do_fsck_full(
 ) -> Result<i32, String> {
     let full_fsck = commits.is_empty();
     let commit_queue = if full_fsck {
-        let changesets_arg = format!("{}^@", changesets_cid);
+        let changesets_arg = format!("{changesets_cid}^@");
 
         Box::new(rev_list([
             "--topo-order",
@@ -3331,12 +3321,12 @@ fn do_fsck_full(
 
     let broken = Cell::new(false);
     let report = |s| {
-        eprintln!("\r{}", s);
+        eprintln!("\r{s}");
         broken.set(true);
     };
     let fixed = Cell::new(false);
     let fix = |s| {
-        eprintln!("\r{}", s);
+        eprintln!("\r{s}");
         fixed.set(true);
     };
 
@@ -3353,7 +3343,7 @@ fn do_fsck_full(
         let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(store, cid) {
             metadata
         } else {
-            report(format!("Missing note for git commit: {}", cid));
+            report(format!("Missing note for git commit: {cid}"));
             continue;
         };
         seen_git2hg.insert(cid);
@@ -3363,7 +3353,7 @@ fn do_fsck_full(
         let metadata = if let Some(metadata) = metadata.parse() {
             metadata
         } else {
-            report(format!("Cannot parse note for git commit: {}", cid));
+            report(format!("Cannot parse note for git commit: {cid}"));
             continue;
         };
         let changeset_id = metadata.changeset_id();
@@ -3371,16 +3361,14 @@ fn do_fsck_full(
             Some(oid) if oid == cid => {}
             Some(oid) => {
                 report(format!(
-                    "Commit mismatch for changeset {}\n\
-                     \x20 hg2git: {}\n\
-                     \x20 commit: {}",
-                    changeset_id, oid, cid
+                    "Commit mismatch for changeset {changeset_id}\n\
+                     \x20 hg2git: {oid}\n\
+                     \x20 commit: {cid}"
                 ));
             }
             None => {
                 report(format!(
-                    "Missing changeset in hg2git branch: {}",
-                    changeset_id
+                    "Missing changeset in hg2git branch: {changeset_id}"
                 ));
                 continue;
             }
@@ -3418,7 +3406,7 @@ fn do_fsck_full(
         sha1.update(&*raw_changeset);
         let sha1 = sha1.finalize();
         if changeset_id.as_raw_bytes() != sha1.as_slice() {
-            report(format!("Sha1 mismatch for changeset {}", changeset_id));
+            report(format!("Sha1 mismatch for changeset {changeset_id}"));
             continue;
         }
 
@@ -3441,10 +3429,9 @@ fn do_fsck_full(
             let fresh_cid = hash.finalize();
             if cid != fresh_cid {
                 eprintln!(
-                    "\nCommit mismatch for changeset {}\n\
-                     \x20 it is commit {} here\n\
-                     \x20 but would be {} on a fresh clone",
-                    changeset_id, cid, fresh_cid
+                    "\nCommit mismatch for changeset {changeset_id}\n\
+                     \x20 it is commit {cid} here\n\
+                     \x20 but would be {fresh_cid} on a fresh clone"
                 );
             }
         }
@@ -3459,7 +3446,7 @@ fn do_fsck_full(
             GeneratedGitChangesetMetadata::generate(store, &commit, changeset_id, &raw_changeset)
                 .unwrap();
         if fresh_metadata != metadata {
-            fix(format!("Adjusted changeset metadata for {}", changeset_id));
+            fix(format!("Adjusted changeset metadata for {changeset_id}"));
             store.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
             store.set(SetWhat::Changeset, changeset_id.into(), cid.into());
             let buf = fresh_metadata.serialize();
@@ -3484,10 +3471,7 @@ fn do_fsck_full(
         let manifest_cid = if let Some(manifest_cid) = manifest_id.to_git(store) {
             manifest_cid
         } else {
-            report(format!(
-                "Missing manifest in hg2git branch: {}",
-                manifest_id
-            ));
+            report(format!("Missing manifest in hg2git branch: {manifest_id}"));
             continue;
         };
 
@@ -3496,7 +3480,7 @@ fn do_fsck_full(
             check_manifest(&manifest_cid) == 1
         };
         if !checked {
-            report(format!("Sha1 mismatch for manifest {}", manifest_id));
+            report(format!("Sha1 mismatch for manifest {manifest_id}"));
         }
 
         let hg_manifest_parents = hg_parents
@@ -3589,15 +3573,15 @@ fn do_fsck_full(
                 b: &'a BTreeSet<CommitId>,
             ) -> impl Iterator<Item = String> + 'a {
                 a.difference(b)
-                    .map(|x| format!("{}", x))
-                    .chain(b.iter().map(|x| format!("^{}", x)))
+                    .map(|x| format!("{x}"))
+                    .chain(b.iter().map(|x| format!("^{x}")))
             }
             let all_args = args
                 .into_iter()
                 .map(str::to_string)
                 .chain(iter_manifests(&manifest_heads, &store_manifest_heads));
             for m in rev_list(all_args) {
-                fix(format!("Missing manifest commit in manifest branch: {}", m));
+                fix(format!("Missing manifest commit in manifest branch: {m}"));
             }
 
             let all_args = args
@@ -3606,8 +3590,7 @@ fn do_fsck_full(
                 .chain(iter_manifests(&store_manifest_heads, &manifest_heads));
             for m in rev_list(all_args) {
                 fix(format!(
-                    "Removing manifest commit {} with no corresponding changeset",
-                    m
+                    "Removing manifest commit {m} with no corresponding changeset"
                 ));
             }
 
@@ -3618,8 +3601,7 @@ fn do_fsck_full(
                 let m = HgManifestId::from_bytes(m.body()).unwrap();
                 if seen_manifests.contains(&m) {
                     fix(format!(
-                        "Remove non-head reference to {} in manifests metadata",
-                        h
+                        "Remove non-head reference to {h} in manifests metadata"
                     ));
                 }
             }
@@ -3647,7 +3629,7 @@ fn do_fsck_full(
             dangling.push(h);
         });
         for h in dangling {
-            fix(format!("Removing dangling metadata for {}", h));
+            fix(format!("Removing dangling metadata for {h}"));
             // Theoretically, we should figure out if they are files, manifests
             // or changesets and set the right variable accordingly, but in
             // practice, it makes no difference. Reevaluate when refactoring,
@@ -3665,7 +3647,7 @@ fn do_fsck_full(
             dangling.push(cid);
         });
         for cid in dangling {
-            fix(format!("Removing dangling note for commit {}", cid));
+            fix(format!("Removing dangling note for commit {cid}"));
             let metadata = RawGitChangesetMetadata::read(store, cid).unwrap();
             let metadata = metadata.parse().unwrap();
             store.set(
@@ -3687,15 +3669,14 @@ fn do_fsck_full(
             .difference(&original_heads)
             .sorted_by_key(|(_, branch)| branch)
         {
-            fix(format!("Adding missing head {} in branch {}", cid, branch));
+            fix(format!("Adding missing head {cid} in branch {branch}"));
         }
         for (cid, branch) in original_heads
             .difference(&computed_heads)
             .sorted_by_key(|(_, branch)| branch)
         {
             fix(format!(
-                "Removing non-head reference to {} in branch {}",
-                cid, branch
+                "Removing non-head reference to {cid} in branch {branch}"
             ));
         }
         if original_heads != computed_heads {
@@ -3818,11 +3799,11 @@ struct AbbrevSize(usize);
 impl FromStr for AbbrevSize {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = usize::from_str(s).map_err(|e| format!("{}", e))?;
+        let value = usize::from_str(s).map_err(|e| format!("{e}"))?;
         match value {
             3..=40 => Ok(AbbrevSize(value)),
-            41..=usize::MAX => Err(format!("value too large: {}", value)),
-            _ => Err(format!("value too small: {}", value)),
+            41..=usize::MAX => Err(format!("value too large: {value}")),
+            _ => Err(format!("value too small: {value}")),
         }
     }
 }
@@ -4250,7 +4231,7 @@ fn remote_helper_tags_list(store: &Store, mut stdout: impl Write) {
     transaction.commit().unwrap();
 
     for &(tag, cid) in &tags {
-        let mut buf = format!("{} refs/tags/", cid).into_bytes();
+        let mut buf = format!("{cid} refs/tags/").into_bytes();
         buf.extend_from_slice(tag);
         buf.push(b'\n');
         stdout.write_all(&buf).unwrap();
@@ -4449,7 +4430,7 @@ fn repo_list(
             head_template,
             &[
                 b"default".as_bstr(),
-                format!("{}", default_tip).as_bytes().as_bstr(),
+                format!("{default_tip}").as_bytes().as_bstr(),
             ],
         ))
     } else {
@@ -4554,7 +4535,7 @@ fn remote_helper_import(
                 .ok_or(refname)
         })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|refname| format!("couldn't find remote ref {}", refname))?;
+        .map_err(|refname| format!("couldn't find remote ref {refname}"))?;
 
     let mut tags = None;
     let unknown_wanted_heads = wanted_refs
@@ -5350,7 +5331,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     match ret {
         Ok(code) => code,
         Err(msg) => {
-            error!(target: "root", "{}", msg);
+            error!(target: "root", "{msg}");
             1
         }
     }
@@ -5587,7 +5568,7 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {
                         match u8::from_bytes(value) {
                             Ok(value) if value <= 100 => {
-                                similarity = Some(CString::new(format!("-C{}%", value)).unwrap());
+                                similarity = Some(CString::new(format!("-C{value}%")).unwrap());
                             }
                             _ => {
                                 warn!(target: "root", "Invalid value for similarity experiment: {}", value.as_bstr());

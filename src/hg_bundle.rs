@@ -321,13 +321,13 @@ impl FromStr for BundleSpec {
             _ => {
                 if let Some([compression, version]) = s.splitn_exact('-') {
                     if !["none", "gzip", "bzip2", "zstd"].contains(&compression) {
-                        return Err(format!("unsupported compression: {}", compression));
+                        return Err(format!("unsupported compression: {compression}"));
                     }
                     if !["v1", "v2"].contains(&version) {
-                        return Err(format!("unsupported bundle version: {}", version));
+                        return Err(format!("unsupported bundle version: {version}"));
                     }
                 }
-                return Err(format!("unsupported bundle spec: {}", s));
+                return Err(format!("unsupported bundle spec: {s}"));
             }
         })
     }
@@ -1081,8 +1081,8 @@ pub fn create_bundle(
         part_id += 1;
     }
 
-    let info = BundlePartInfo::new(part_id, "changegroup")
-        .set_param("version", &format!("{:02}", version));
+    let info =
+        BundlePartInfo::new(part_id, "changegroup").set_param("version", &format!("{version:02}"));
     let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
     let mut previous = None;
     let mut manifests = IndexMap::new();

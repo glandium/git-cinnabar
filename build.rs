@@ -53,11 +53,11 @@ fn normalize_path(s: &str) -> String {
 }
 
 fn env(name: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
+    std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {name}"))
 }
 
 fn env_os(name: &str) -> OsString {
-    std::env::var_os(name).unwrap_or_else(|| panic!("Failed to get {}", name))
+    std::env::var_os(name).unwrap_or_else(|| panic!("Failed to get {name}"))
 }
 
 fn prepare_make(make: &mut Command) -> &mut Command {
@@ -75,7 +75,7 @@ fn prepare_make(make: &mut Command) -> &mut Command {
         if chunk.len() == 2 {
             let name = chunk[0].trim_start().trim_end_matches('=');
             let value = chunk[1];
-            result = result.arg(format!("{}={}", name, value));
+            result = result.arg(format!("{name}={value}"));
         }
     }
     result.env_remove("PROFILE")
@@ -88,10 +88,7 @@ fn main() {
     let target_endian = env("CARGO_CFG_TARGET_ENDIAN");
     let target_pointer_width = env("CARGO_CFG_TARGET_POINTER_WIDTH");
     if target_os == "windows" && target_env != "gnu" {
-        panic!(
-            "Compilation for {}-{} is not supported",
-            target_os, target_env
-        );
+        panic!("Compilation for {target_os}-{target_env} is not supported");
     }
 
     let dir = env_os("CARGO_MANIFEST_DIR");
@@ -170,7 +167,7 @@ fn main() {
         .copied(),
     )
     .join(" ");
-    cmd.arg(format!("CFLAGS={}", cflags));
+    cmd.arg(format!("CFLAGS={cflags}"));
     cmd.arg(format!("CC={}", compiler.path().display()));
     cmd.arg(format!("AR={}", ar.get_program().to_str().unwrap()));
 
@@ -186,7 +183,7 @@ fn main() {
     .filter_map(Option::as_deref)
     .join(" ");
     if !curl_cflags.is_empty() {
-        cmd.arg(format!("CURL_CFLAGS={}", curl_cflags));
+        cmd.arg(format!("CURL_CFLAGS={curl_cflags}"));
     }
 
     let compile_commands =
@@ -296,9 +293,9 @@ fn main() {
 
     for flag in output.split_whitespace() {
         if let Some(lib) = flag.strip_prefix("-l") {
-            println!("cargo:rustc-link-lib={}", lib);
+            println!("cargo:rustc-link-lib={lib}");
         } else if let Some(libdir) = flag.strip_prefix("-L") {
-            println!("cargo:rustc-link-search=native={}", libdir);
+            println!("cargo:rustc-link-search=native={libdir}");
         }
     }
 

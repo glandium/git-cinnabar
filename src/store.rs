@@ -1347,7 +1347,7 @@ impl Store {
         for head in self.changeset_heads().heads() {
             (|| -> Option<()> {
                 let head = head.to_git(self)?;
-                let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
+                let tags_file = get_oid_blob(format!("{head}:.hgtags").as_bytes())?;
                 if tags_files.insert(tags_file) {
                     let tags_blob = RawBlob::read(tags_file).unwrap();
                     tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
@@ -1380,7 +1380,7 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
     }
     let tid = store_git_tree(&tree, None);
     let mut commit = Vec::new();
-    writeln!(commit, "tree {}", tid).ok();
+    writeln!(commit, "tree {tid}").ok();
     let heads = store.changeset_heads();
     for (head, _) in heads.branch_heads() {
         writeln!(commit, "parent {}", head.to_git(store).unwrap()).ok();
@@ -1388,7 +1388,7 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000").ok();
     for (head, branch) in heads.branch_heads() {
-        write!(commit, "\n{} {}", head, branch).ok();
+        write!(commit, "\n{head} {branch}").ok();
     }
     store_git_commit(&commit)
 }
@@ -1398,7 +1398,7 @@ fn store_manifests_metadata(store: &Store) -> CommitId {
     writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
     let heads = store.manifest_heads();
     for head in heads.heads() {
-        writeln!(commit, "parent {}", head).ok();
+        writeln!(commit, "parent {head}").ok();
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000\n").ok();
@@ -1839,9 +1839,9 @@ pub fn raw_commit_for_changeset(
             }
         });
     let git_committer = git_committer.as_ref().unwrap_or(&git_author);
-    result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
+    result.extend_from_slice(format!("tree {tree_id}\n").as_bytes());
     for parent in parents {
-        result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
+        result.extend_from_slice(format!("parent {parent}\n").as_bytes());
     }
     result.extend_from_slice(b"author ");
     result.extend_from_slice(&git_author.0);
@@ -2034,7 +2034,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
             bundle_writer = Some(BundleWriter::new(BundleSpec::V2Zstd, &mut bundle).unwrap());
             let bundle_writer = bundle_writer.as_mut().unwrap();
             let info = BundlePartInfo::new(0, "changegroup")
-                .set_param("version", &format!("{:02}", version));
+                .set_param("version", &format!("{version:02}"));
             let part = bundle_writer.new_part(info).unwrap();
             Box::new(TeeReader::new(input, part)) as Box<dyn Read>
         } else {
@@ -2377,7 +2377,7 @@ pub fn merge_metadata(
             let mut bundle = match get_reader(&git_url, "cinnabarclone") {
                 Ok(bundle) => bundle,
                 Err(e) => {
-                    error!(target: "root", "{}", e);
+                    error!(target: "root", "{e}");
                     return false;
                 }
             };
@@ -2525,7 +2525,7 @@ pub fn merge_metadata(
                             .to_boxed(),
                     );
                 } else {
-                    error!(target: "root", "Missing commit: {}", cid);
+                    error!(target: "root", "Missing commit: {cid}");
                     errors = true;
                 }
             }
@@ -2663,7 +2663,7 @@ impl Store {
                 }) => {
                     if let Ok(original) = CommitId::from_bytes(&path) {
                         if original == replace_with {
-                            warn!("self-referencing graft: {}", original);
+                            warn!("self-referencing graft: {original}");
                         } else {
                             replaces
                                 .entry(original)
@@ -2763,7 +2763,7 @@ pub fn do_store_metadata(store: &Store) -> CommitId {
         let mut buf = Vec::new();
         writeln!(buf, "tree {}", GitObjectId::from(tree)).ok();
         for p in new_metadata.into_iter().chain(previous) {
-            writeln!(buf, "parent {}", p).ok();
+            writeln!(buf, "parent {p}").ok();
         }
         buf.extend_from_slice(
             b"author  <cinnabar@git> 0 +0000\n\

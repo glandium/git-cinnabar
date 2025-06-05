@@ -355,7 +355,7 @@ impl<'a> LoggingHelper<'a> {
                             line.push_str(".. ");
                         } else if let Some(c) = buf.get(usize::try_from(ofs + n - *offset).unwrap())
                         {
-                            write!(line, "{:02x} ", c).unwrap();
+                            write!(line, "{c:02x} ").unwrap();
                         } else {
                             line.push_str("   ");
                         }
@@ -376,7 +376,7 @@ impl<'a> LoggingHelper<'a> {
                         }
                     }
                     line.push('|');
-                    log!(target: &*self.target, level, "{}", line);
+                    log!(target: &*self.target, level, "{line}");
                 }
                 *offset += buf.len() as u64;
             } else {

@@ -497,7 +497,7 @@ pub fn rev_list(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> RevList {
             }
         }
         maybe_add_commits(&mut data, commits, substracted_commits);
-        log!(target: "rev-list", log_level, "{}", data);
+        log!(target: "rev-list", log_level, "{data}");
     }
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
@@ -807,7 +807,7 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 },
             },
         ),
-        c => panic!("Unknown diff state: {}", c),
+        c => panic!("Unknown diff state: {c}"),
     };
     diff_tree.push(item);
 }
@@ -816,8 +816,8 @@ pub fn diff_tree_with_copies(
     a: CommitId,
     b: CommitId,
 ) -> impl Iterator<Item = WithPath<DiffTreeItem>> {
-    let a = CString::new(format!("{}", a)).unwrap();
-    let b = CString::new(format!("{}", b)).unwrap();
+    let a = CString::new(format!("{a}")).unwrap();
+    let b = CString::new(format!("{b}")).unwrap();
     let args = [
         cstr!(""),
         &a,

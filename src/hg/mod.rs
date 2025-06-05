@@ -26,7 +26,7 @@ fn test_abbrev_hg_object_id() {
         let abbrev = HgObjectId::from_str("123456789abcdef00123456789abcdefedcba987")
             .unwrap()
             .abbrev(len);
-        let result = format!("{}", abbrev);
+        let result = format!("{abbrev}");
         assert_eq!(&result, &hex[..len]);
 
         let abbrev2 = Abbrev::<HgObjectId>::from_str(&result).unwrap();

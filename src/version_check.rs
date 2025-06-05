@@ -223,8 +223,7 @@ impl Drop for VersionChecker {
                 } else {
                     warn!(
                         target: "root",
-                        "New git-cinnabar version available: {}",
-                        version,
+                        "New git-cinnabar version available: {version}",
                     );
                 }
                 if cfg!(feature = "self-update") {
@@ -311,10 +310,10 @@ fn get_version(child: &VersionRequestChild) -> Result<Option<VersionInfo>, ()> {
     })?;
     match &result {
         Some(VersionInfo::Tagged(v, _)) => {
-            debug!(target: "version-check", "Newest version found: {}", v);
+            debug!(target: "version-check", "Newest version found: {v}");
         }
         Some(VersionInfo::Commit(cid)) => {
-            debug!(target: "version-check", "Newest commit found: {}", cid);
+            debug!(target: "version-check", "Newest commit found: {cid}");
         }
         None => {
             debug!(target: "version-check", "Nothing found");

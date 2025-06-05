@@ -250,7 +250,7 @@ pub fn store_metadata_notes(
     }
     if !tree.is_null() {
         let mut buf = Vec::new();
-        writeln!(buf, "tree {}", tree).ok();
+        writeln!(buf, "tree {tree}").ok();
         buf.extend_from_slice(
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
