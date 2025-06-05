@@ -9,12 +9,11 @@ use std::ffi::OsStr;
 use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
-use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int, c_ulong};
 use std::process::{Command, Stdio};
-use std::ptr;
 use std::sync::Mutex;
+use std::{mem, ptr};
 
 use bit_vec::BitVec;
 use bitflags::bitflags;

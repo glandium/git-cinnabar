@@ -3,15 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::fmt;
 use std::marker::PhantomData;
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr::{self, NonNull};
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+use std::{fmt, mem};
 
 use bstr::ByteSlice;
 use cstr::cstr;
