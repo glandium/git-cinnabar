@@ -110,7 +110,7 @@ class Git(Task, metaclass=Tool):
                 self,
                 task_env=build_image,
                 description=description,
-                index="{}.git.v{}".format(h.hexdigest(), version),
+                index="git.v{}.{}".format(version, h.hexdigest()),
                 command=Task.checkout(
                     "git://git.kernel.org/pub/scm/git/git.git",
                     "v{}".format(version),
@@ -150,7 +150,7 @@ class Git(Task, metaclass=Tool):
                 self,
                 task_env=build_image,
                 description="git v{} {} {}".format(version, env.os, env.cpu),
-                index="{}.git.v{}".format(h.hexdigest(), raw_version),
+                index="git.v{}.{}".format(raw_version, h.hexdigest()),
                 command=[
                     "curl -L https://github.com/git-for-windows/git/releases/"
                     "download/v{}/MinGit-{}-{}-bit.zip"
@@ -315,7 +315,7 @@ class Hg(Task, metaclass=Tool):
             self,
             task_env=env,
             description=desc,
-            index="{}.hg.{}".format(h.hexdigest(), pretty_version),
+            index="hg.{}.{}".format(pretty_version, h.hexdigest()),
             command=pre_command
             + [f"{python} -m pip wheel -v -w $ARTIFACTS ./mercurial-{version}"],
             artifact=artifact.format(artifact_version),
