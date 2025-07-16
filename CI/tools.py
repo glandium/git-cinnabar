@@ -424,7 +424,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        environ["CC"] = "clang-19"
+        environ["CC"] = "clang-20"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -458,7 +458,7 @@ class Build(Task, metaclass=Tool):
             environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
                 f"-C link-arg={arg}" for arg in link_args
             )
-            environ["AR"] = "llvm-ar-19"
+            environ["AR"] = "llvm-ar-20"
             rustflags = environ.pop("RUSTFLAGS", None)
             if rustflags:
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
