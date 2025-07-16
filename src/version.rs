@@ -40,7 +40,7 @@ impl Version {
             v.find(|c: char| !c.is_ascii_digit() && c != '.')
                 .map(|pos| {
                     let (digits, rest) = v.split_at(pos);
-                    format!("{}-{}", digits, rest)
+                    format!("{digits}-{rest}")
                 })
                 .as_deref()
                 .and_then(|v| semver::Version::parse(v).ok())

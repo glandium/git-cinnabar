@@ -35,10 +35,11 @@ VERSIONS = {
     "0.7.0beta2": "0.7.0-beta.2",
     "0.7.0": "0.7.0",
     "0.7.1": "0.7.1",
+    "0.7.2": "0.7.2",
     # Newer versions below. We're bound to what older versions were doing to find the
     # right download on self-update. I don't know what went through my head when I
     # made that code strip dashes from tag names...
-    "0.7.2": "0.7.2",
+    "0.7.3": "0.7.3",
     # Here's a trick to make things happy-ish in the future: older versions don't
     # handle tags prefixed with "v", but will still do a self-update to the first
     # one it finds.
@@ -53,6 +54,20 @@ VERSIONS = {
     "v0.10.0": "0.10.0",
 }
 VERSIONS_ORDER = {v: n for n, v in enumerate(VERSIONS)}
+
+
+def removesuffix(self, suffix):
+    if suffix and self.endswith(suffix):
+        return self[: -len(suffix)]
+    else:
+        return self[:]
+
+
+def removeprefix(self, prefix):
+    if self.startswith(prefix):
+        return self[len(prefix) :]
+    else:
+        return self[:]
 
 
 def version_for_tag(tag):
@@ -111,7 +126,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     worktree_head = env.check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
     head_version = env.get_version([git_cinnabar, "-V"])
     head_full_version = env.get_version([git_cinnabar, "--version"])
-    _, _, head = head_full_version.removesuffix("-modified").rpartition("-")
+    _, _, head = removesuffix(head_full_version, "-modified").rpartition("-")
     head_branch = "release"
     if head_version.endswith(".0-a"):
         head_branch = "next"
@@ -472,7 +487,7 @@ class CommandEnvironment:
     class CalledProcessError(subprocess.CalledProcessError):
         def __repr__(self):
             return (
-                super().__repr__().removesuffix(")")
+                removesuffix(super().__repr__(), ")")
                 + f", stdout={self.stdout!r}, stderr={self.stderr!r})"
             )
 
@@ -497,7 +512,7 @@ class CommandEnvironment:
         return result
 
     def get_version(self, x, **kwargs):
-        return self.check_output(x, **kwargs).removeprefix("git-cinnabar ")
+        return removeprefix(self.check_output(x, **kwargs), "git-cinnabar ")
 
     def derive_with(self, cwd=None, **kwargs):
         env = self.env.copy()

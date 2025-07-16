@@ -1,8 +1,8 @@
 diff --git a/run-command.c b/run-command.c
-index 7e4e2e7fb66..fc4932219fe 100644
+index dbfe9834bd..269dd8f7d9 100644
 --- a/run-command.c
 +++ b/run-command.c
-@@ -285,7 +285,8 @@ char *git_shell_path(void)
+@@ -286,7 +286,8 @@ char *git_shell_path(void)
  #endif
  }
  

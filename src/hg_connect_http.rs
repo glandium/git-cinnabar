@@ -333,7 +333,7 @@ impl HttpRequest {
     #[allow(clippy::result_large_err)]
     fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
         let (sender, receiver) = channel::<HttpRequestChannelData>();
-        let token = self.token.clone();
+        let token = Arc::clone(&self.token);
         let thread = thread::Builder::new()
             .name("HTTP".into())
             .spawn(move || unsafe {
@@ -404,7 +404,7 @@ impl HttpRequest {
                     curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
                 }
                 for (name, value) in self.headers.iter() {
-                    let header_line = CString::new(format!("{}: {}", name, value)).unwrap();
+                    let header_line = CString::new(format!("{name}: {value}")).unwrap();
                     headers = curl_slist_append(headers, header_line.as_ptr());
                 }
                 curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
@@ -530,8 +530,7 @@ impl Read for HttpResponse {
                     drop(self.receiver.take());
                     if let Some(thread) = self.thread.take() {
                         thread.join().unwrap().map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::Other,
+                            io::Error::other(
                                 unsafe { CStr::from_ptr(curl_errorstr.as_ptr()) }.to_string_lossy(),
                             )
                         })?;
@@ -706,7 +705,7 @@ impl HgHttpConnection {
                 let mut args = &args[..];
                 let mut num = 1;
                 while !args.is_empty() {
-                    let header_name = format!("X-HgArg-{}", num);
+                    let header_name = format!("X-HgArg-{num}");
                     num += 1;
                     let (chunk, remainder) = args.split_at(cmp::min(
                         args.len(),
@@ -724,7 +723,7 @@ impl HgHttpConnection {
         drop(query_pairs);
 
         let mut request = HttpRequest::new(command_url);
-        request.set_log_target(format!("raw-wire::{}", command));
+        request.set_log_target(format!("raw-wire::{command}"));
         if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_ALWAYS {
             request.follow_redirects(true);
         }
@@ -905,7 +904,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
         Some("application/mercurial-0.1" | "application/mercurial-0.2") => {
             let caps = http_resp.read_all().unwrap();
             drop(http_resp);
-            mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
+            conn.capabilities = HgCapabilities::new_from(&caps);
             Some(Box::new(HgWired::new(conn)))
         }
         _ => Some(Box::new(BundleConnection::new(

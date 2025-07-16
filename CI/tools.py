@@ -16,7 +16,7 @@ from tasks import (
 from util import build_commit
 
 MERCURIAL_VERSION = "6.9.1"
-GIT_VERSION = "2.49.0"
+GIT_VERSION = "2.50.1"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
@@ -110,7 +110,7 @@ class Git(Task, metaclass=Tool):
                 self,
                 task_env=build_image,
                 description=description,
-                index="{}.git.v{}".format(h.hexdigest(), version),
+                index="git.v{}.{}".format(version, h.hexdigest()),
                 command=Task.checkout(
                     "git://git.kernel.org/pub/scm/git/git.git",
                     "v{}".format(version),
@@ -150,7 +150,7 @@ class Git(Task, metaclass=Tool):
                 self,
                 task_env=build_image,
                 description="git v{} {} {}".format(version, env.os, env.cpu),
-                index="{}.git.v{}".format(h.hexdigest(), raw_version),
+                index="git.v{}.{}".format(raw_version, h.hexdigest()),
                 command=[
                     "curl -L https://github.com/git-for-windows/git/releases/"
                     "download/v{}/MinGit-{}-{}-bit.zip"
@@ -315,7 +315,7 @@ class Hg(Task, metaclass=Tool):
             self,
             task_env=env,
             description=desc,
-            index="{}.hg.{}".format(h.hexdigest(), pretty_version),
+            index="hg.{}.{}".format(pretty_version, h.hexdigest()),
             command=pre_command
             + [f"{python} -m pip wheel -v -w $ARTIFACTS ./mercurial-{version}"],
             artifact=artifact.format(artifact_version),
@@ -334,7 +334,7 @@ class Hg(Task, metaclass=Tool):
         return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
-def install_rust(version="1.85.1", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.88.0", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
@@ -424,7 +424,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        environ["CC"] = "clang-19"
+        environ["CC"] = "clang-20"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -458,7 +458,7 @@ class Build(Task, metaclass=Tool):
             environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
                 f"-C link-arg={arg}" for arg in link_args
             )
-            environ["AR"] = "llvm-ar-19"
+            environ["AR"] = "llvm-ar-20"
             rustflags = environ.pop("RUSTFLAGS", None)
             if rustflags:
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
@@ -510,7 +510,7 @@ class Build(Task, metaclass=Tool):
             self,
             task_env=build_env,
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
-            index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
+            index="build.{}.{}{}.{}".format(env.os, cpu, prefix(".", variant), hash),
             command=Task.checkout(commit=head)
             + sdk_install
             + rust_install

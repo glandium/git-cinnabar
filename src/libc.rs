@@ -24,7 +24,7 @@ impl Read for FdFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         unsafe {
             match xread(self.0, buf.as_mut_ptr() as _, buf.len()) {
-                s if s < 0 => Err(io::Error::new(io::ErrorKind::Other, "read error")),
+                s if s < 0 => Err(io::Error::other("read error")),
                 s => Ok(s as usize),
             }
         }
@@ -35,7 +35,7 @@ impl Write for FdFile {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         unsafe {
             match xwrite(self.0, buf.as_ptr() as _, buf.len()) {
-                s if s < 0 => Err(io::Error::new(io::ErrorKind::Other, "write error")),
+                s if s < 0 => Err(io::Error::other("write error")),
                 s => Ok(s as usize),
             }
         }

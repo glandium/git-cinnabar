@@ -1,10 +1,10 @@
 diff --git a/object-file.c b/object-file.c
-index 9915c8ad3a..e9f19cefe9 100644
+index 1644a0d985..24b821dafd 100644
 --- a/object-file.c
 +++ b/object-file.c
-@@ -38,6 +38,12 @@
- #include "loose.h"
- #include "object-file-convert.h"
+@@ -29,6 +29,12 @@
+ #include "setup.h"
+ #include "streaming.h"
  
 +#define write_object_file_flags real_write_object_file_flags
 +

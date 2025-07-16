@@ -503,3 +503,21 @@ that recreated the tags from scratch are expected to be identical.
   |/  
   * 8b86a58 a
 
+  $ git -C repo-git3 cinnabar tag -m "tag c" TAG_C_2 7688446e0a5d5b6108443632be74c9bca72d31b1 --onto tags_2
+  $ git -C repo-git3 log --oneline --graph tags_2
+  * 9028526 tag c
+  $ git -C repo-git3 push hg::$REPO tags_2:refs/heads/branches/default/newtip -f
+  \r (no-eol) (esc)
+  WARNING Pushing a new root
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files (+1 heads)
+  To hg::(.*)/tags.t/repo (re)
+   * [new branch]      tags_2 -> branches/default/newtip
+  $ git -C repo-git3 ls-remote hg::tags:
+  8b86a58578d5270969543e287634e3a2f122a338	refs/tags/TAG_A
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/tags/TAG_B
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/tags/TAG_C
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/tags/TAG_C_2
+

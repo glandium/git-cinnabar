@@ -6,9 +6,9 @@
 static inline void winansi_init(void) {}
 #define main cinnabar_main
 extern int cinnabar_main(int argc, const char *argv[]);
-// Work around the function being declared despite NO_UNIX_SOCKETS.
-int mingw_have_unix_sockets(void);
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wcomma"
+#endif
 #include "compat/mingw.c"
 #else
 typedef int make_pedantic_happy;

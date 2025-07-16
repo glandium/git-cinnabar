@@ -1,8 +1,8 @@
 diff --git a/http.c b/http.c
-index c1c9b20c88..016547f041 100644
+index bf6889a30c..f7e2a585ff 100644
 --- a/http.c
 +++ b/http.c
-@@ -63,7 +63,7 @@ static char *ssl_key_type;
+@@ -64,7 +64,7 @@ static char *ssl_key_type;
  static char *ssl_capath;
  static char *curl_no_proxy;
  static char *ssl_pinnedkey;
@@ -11,7 +11,7 @@ index c1c9b20c88..016547f041 100644
  static long curl_low_speed_limit = -1;
  static long curl_low_speed_time = -1;
  static int curl_ftp_no_epsv;
-@@ -418,11 +418,13 @@ static int http_options(const char *var, const char *value,
+@@ -423,11 +423,13 @@ static int http_options(const char *var, const char *value,
  		curl_ssl_try = git_config_bool(var, value);
  		return 0;
  	}
@@ -25,7 +25,7 @@ index c1c9b20c88..016547f041 100644
  
  	if (!strcmp("http.schannelcheckrevoke", var)) {
  		if (value && !strcmp(value, "best-effort")) {
-@@ -1337,9 +1339,6 @@ void http_init(struct remote *remote, const char *url, int proactive_auth)
+@@ -1380,9 +1382,6 @@ void http_init(struct remote *remote, const char *url, int proactive_auth)
  		}
  	}
  
@@ -35,7 +35,7 @@ index c1c9b20c88..016547f041 100644
  	if (proactive_auth && http_proactive_auth == PROACTIVE_AUTH_NONE)
  		http_proactive_auth = PROACTIVE_AUTH_IF_CREDENTIALS;
  
-@@ -1427,7 +1426,6 @@ void http_cleanup(void)
+@@ -1470,7 +1469,6 @@ void http_cleanup(void)
  	curl_easy_cleanup(curl_default);
  
  	curl_multi_cleanup(curlm);

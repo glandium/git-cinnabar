@@ -5,8 +5,8 @@ tasks:
     $let:
       e:
         repo_name: ${event.repository.name}
-        repo_url: ${event.repository.url}
-        base_repo_url: ${event.repository.url}
+        repo_url: ${event.repository.html_url}
+        base_repo_url: ${event.repository.html_url}
         login: ${event.pusher.name}
         commit: ${event.after}
         branch:
@@ -94,7 +94,7 @@ tasks:
                     git -C repo remote add head ${e.repo_url} &&
                     git -C repo remote update head &&
                     git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
-                    python3 repo/CI/get_artifact.py --run-id $(cat run_id) index.project.git-cinnabar.build.${e.commit}.${variant}
+                    python3 repo/CI/get_artifact.py --run-id $(cat run_id) index.project.git-cinnabar.build.${variant}.${e.commit}
               artifacts:
                 $if: '"windows" in variant'
                 then:

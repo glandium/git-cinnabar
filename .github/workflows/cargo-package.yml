@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.85.1]
+        toolchain: [1.88.0]
         include:
           - os: windows-latest
-            toolchain: 1.85.1-x86_64-pc-windows-gnu
+            toolchain: 1.88.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - uses: msys2/setup-msys2@v2
         with:
-          release: false
+          release: true
           update: false
           msystem: MINGW64
           install: >-

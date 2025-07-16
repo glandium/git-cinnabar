@@ -5,9 +5,8 @@
 use bstr::ByteSlice;
 use getset::{CopyGetters, Getters};
 
-use crate::util::{FromBytes, SliceExt};
-
 use super::{git_oid_type, GitObjectId, TreeId, TreeIsh};
+use crate::util::{FromBytes, SliceExt};
 
 git_oid_type!(CommitId(GitObjectId));
 

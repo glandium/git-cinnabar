@@ -63,7 +63,7 @@ impl<I: Iterator, F: Fn(usize) -> String> ProgressIterEnabled<I, F> {
         if let Some(start) = self.start {
             eprint!("\r{} in {:.1}s", s, (now - start).as_secs_f32());
         } else {
-            eprint!("\r{}", s);
+            eprint!("\r{s}");
         }
         self.last_update = now;
     }

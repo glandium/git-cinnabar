@@ -54,7 +54,7 @@ pub fn maybe_init_graft(store: &Store, remote: Option<&str>) -> Result<(), Strin
 }
 
 fn fetch_graft(url: Url) {
-    eprintln!("Fetching from {}", url);
+    eprintln!("Fetching from {url}");
     let mut command = Command::new("git");
     command
         .arg("fetch")
@@ -90,7 +90,7 @@ pub fn init_graft(store: &Store, fetched: bool) {
         }
     }
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
-    for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
+    for cid in rev_list(&args).progress(|n| format!("Reading {n} graft candidates")) {
         let c = RawCommit::read(cid).unwrap();
         let c = c.parse().unwrap();
         let cids_for_tree = graft_trees.entry(c.tree()).or_default();

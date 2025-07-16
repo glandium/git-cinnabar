@@ -321,13 +321,13 @@ impl FromStr for BundleSpec {
             _ => {
                 if let Some([compression, version]) = s.splitn_exact('-') {
                     if !["none", "gzip", "bzip2", "zstd"].contains(&compression) {
-                        return Err(format!("unsupported compression: {}", compression));
+                        return Err(format!("unsupported compression: {compression}"));
                     }
                     if !["v1", "v2"].contains(&version) {
-                        return Err(format!("unsupported bundle version: {}", version));
+                        return Err(format!("unsupported bundle version: {version}"));
                     }
                 }
-                return Err(format!("unsupported bundle spec: {}", s));
+                return Err(format!("unsupported bundle spec: {s}"));
             }
         })
     }
@@ -392,13 +392,10 @@ impl<'a> BundleReader<'a> {
             Some(b"BZ") => Box::new(BzDecoder::new(reader)),
             Some(b"ZS") => Box::new(ZstdDecoder::new(reader).unwrap()),
             Some(comp) => {
-                return Err(io::Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "Unknown mercurial bundle compression: {}",
-                        String::from_utf8_lossy(comp)
-                    ),
-                ))
+                return Err(io::Error::other(format!(
+                    "Unknown mercurial bundle compression: {}",
+                    String::from_utf8_lossy(comp)
+                )))
             }
             None => Box::from(reader),
         };
@@ -417,13 +414,10 @@ impl<'a> BundleReader<'a> {
             b"BZ" => Box::new(BzDecoder::new(Cursor::new(compression).chain(reader))),
             b"UN" => Box::from(reader),
             comp => {
-                return Err(io::Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "Unknown mercurial bundle compression: {}",
-                        String::from_utf8_lossy(comp)
-                    ),
-                ))
+                return Err(io::Error::other(format!(
+                    "Unknown mercurial bundle compression: {}",
+                    String::from_utf8_lossy(comp)
+                )))
             }
         };
         Ok(BundleReader {
@@ -1087,8 +1081,8 @@ pub fn create_bundle(
         part_id += 1;
     }
 
-    let info = BundlePartInfo::new(part_id, "changegroup")
-        .set_param("version", &format!("{:02}", version));
+    let info =
+        BundlePartInfo::new(part_id, "changegroup").set_param("version", &format!("{version:02}"));
     let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
     let mut previous = None;
     let mut manifests = IndexMap::new();

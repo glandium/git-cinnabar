@@ -3,15 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::fmt;
 use std::marker::PhantomData;
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr::{self, NonNull};
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+use std::{fmt, mem};
 
 use bstr::ByteSlice;
 use cstr::cstr;
@@ -101,7 +100,7 @@ impl strbuf {
     pub fn reset(&mut self) {
         self.len = 0;
         unsafe {
-            if self.buf != strbuf_slopbuf.as_ptr() as *mut _ {
+            if !std::ptr::eq(self.buf, strbuf_slopbuf.as_ptr()) {
                 *self.buf = 0;
             }
         }
@@ -223,7 +222,6 @@ pub struct object_info {
     sizep: *mut c_ulong,
     disk_sizep: *mut u64,
     delta_base_oid: *mut object_id,
-    type_name: *mut strbuf,
     contentp: *mut *mut c_void,
     whence: c_int, // In reality, it's an inline enum.
     // In reality, following is a union with one struct.
@@ -239,7 +237,6 @@ impl Default for object_info {
             sizep: std::ptr::null_mut(),
             disk_sizep: std::ptr::null_mut(),
             delta_base_oid: std::ptr::null_mut(),
-            type_name: std::ptr::null_mut(),
             contentp: std::ptr::null_mut(),
             whence: 0,
             u_packed_pack: std::ptr::null_mut(),
@@ -314,12 +311,14 @@ impl<T: ?Sized> Drop for FfiBox<T> {
     }
 }
 
-impl From<strbuf> for FfiBox<[u8]> {
+impl From<strbuf> for Option<FfiBox<[u8]>> {
     fn from(value: strbuf) -> Self {
-        let ptr = value.buf as *mut _;
-        let len = value.len;
-        mem::forget(value);
-        unsafe { FfiBox::from_raw_parts(ptr, len) }
+        (value.len != 0).then(|| {
+            let ptr = value.buf as *mut _;
+            let len = value.len;
+            mem::forget(value);
+            unsafe { FfiBox::from_raw_parts(ptr, len) }
+        })
     }
 }
 
@@ -495,7 +494,7 @@ pub fn rev_list(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> RevList {
             }
         }
         maybe_add_commits(&mut data, commits, substracted_commits);
-        log!(target: "rev-list", log_level, "{}", data);
+        log!(target: "rev-list", log_level, "{data}");
     }
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
@@ -805,7 +804,7 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 },
             },
         ),
-        c => panic!("Unknown diff state: {}", c),
+        c => panic!("Unknown diff state: {c}"),
     };
     diff_tree.push(item);
 }
@@ -814,8 +813,8 @@ pub fn diff_tree_with_copies(
     a: CommitId,
     b: CommitId,
 ) -> impl Iterator<Item = WithPath<DiffTreeItem>> {
-    let a = CString::new(format!("{}", a)).unwrap();
-    let b = CString::new(format!("{}", b)).unwrap();
+    let a = CString::new(format!("{a}")).unwrap();
+    let b = CString::new(format!("{b}")).unwrap();
     let args = [
         cstr!(""),
         &a,

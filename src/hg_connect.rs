@@ -309,7 +309,7 @@ impl<C: HgWireConnection> LogWireConnection<C> {
     }
 
     fn log(command: &str, f: impl FnOnce(log::Level) -> String) {
-        let target = format!("wire::{}", command);
+        let target = format!("wire::{command}");
         let level = logging::max_log_level(&target, log::Level::Debug).to_level();
         if let Some(level) = level {
             log!(target: &target, level, "{}", f(level));
@@ -908,7 +908,7 @@ pub fn find_common(
         "--full-history".to_string(),
     ]
     .into_iter()
-    .chain(known.iter().map(|(_, k)| format!("^{}^@", k)))
+    .chain(known.iter().map(|(_, k)| format!("^{k}^@")))
     .chain(
         undetermined
             .iter()
@@ -979,7 +979,7 @@ pub fn find_common(
                 other_count = undetermined.len() - roots_count - heads_count;
             }
         }
-        debug!(target: "find-common", "sample: roots: {}, heads: {}, other: {}", roots_count, heads_count, other_count);
+        debug!(target: "find-common", "sample: roots: {roots_count}, heads: {heads_count}, other: {other_count}");
         let (sample_hg, sample_git): (Vec<_>, Vec<_>) = undetermined
             .into_iter()
             .map(|(&c, data): (&CommitId, &FindCommonInfo)| {
@@ -1025,7 +1025,7 @@ pub fn find_common(
                 }
             });
     }
-    debug!(target: "find-common", "known: {}, unknown: {}", known_count, unknown_count);
+    debug!(target: "find-common", "known: {known_count}, unknown: {unknown_count}");
     let result = dag
         .heads(|_, data| data.known.get() == Some(true))
         .map(|(_, data)| data.hg_node.get().unwrap())
@@ -1158,7 +1158,7 @@ fn get_initial_bundle(
             if limit_schemes && !["http", "https", "git"].contains(&url.scheme()) {
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
-                eprintln!("Fetching cinnabar metadata from {}", url);
+                eprintln!("Fetching cinnabar metadata from {url}");
                 merge_metadata(store, url, conn.get_url().cloned(), branch.as_deref()).then_some(()).ok_or(None)
             }
         }) {
@@ -1167,7 +1167,7 @@ fn get_initial_bundle(
             }
             Err(e) => {
                 if let Some(e) = e {
-                    warn!(target: "root", "{}", e);
+                    warn!(target: "root", "{e}");
                 }
                 if check_enabled(Checks::CINNABARCLONE) {
                     return Err("cinnabarclone failed".to_string());
@@ -1187,7 +1187,7 @@ fn get_initial_bundle(
             .or_else(|| Some(get_clonebundle_url(conn)))
             .flatten()
         {
-            eprintln!("Getting clone bundle from {}", url);
+            eprintln!("Getting clone bundle from {url}");
             let mut bundle_conn = get_bundle_connection(&url).unwrap();
             match get_store_bundle(store, &mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
@@ -1236,7 +1236,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
                 .ok_or("failed to decode")
         })
         .transpose()?;
-    trace!(target: "clonebundle", "{:?}", attributes);
+    trace!(target: "clonebundle", "{attributes:?}");
 
     //TODO: should we care about REQUIRESNI, or can we assume curl always supports
     //SNI? (for now, we assume it does).
@@ -1254,7 +1254,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
         })
         .collect::<Option<HashMap<_, _>>>()
         .ok_or("failed to decode BUNDLESPEC")?;
-    trace!(target: "clonebundle", "{:?}", params);
+    trace!(target: "clonebundle", "{params:?}");
 
     Ok((!params.contains_key(b"stream".as_bstr()))
         .then_some(Some(url))
@@ -1272,7 +1272,7 @@ pub fn get_clonebundle_url(conn: &mut dyn HgRepo) -> Option<Url> {
                 return Some(url);
             }
             Err(e) => {
-                debug!(target: "clonebundle", " Skipping ({})", e);
+                debug!(target: "clonebundle", " Skipping ({e})");
             }
         }
     }
@@ -1392,7 +1392,7 @@ pub fn get_cinnabarclone_url(
                         &["--branches", "--tags", "--remotes"]
                     };
                     let args = ["--max-count=1", "--ancestry-path"];
-                    let other_args = info.graft.iter().map(|c| format!("^{}^@", c)).collect_vec();
+                    let other_args = info.graft.iter().map(|c| format!("^{c}^@")).collect_vec();
                     if rev_list(
                         refs.iter()
                             .map(|x| &**x)
@@ -1409,7 +1409,7 @@ pub fn get_cinnabarclone_url(
                 candidates.push(info);
             }
             Err(e) => {
-                debug!(target: "cinnabarclone", " Skipping ({})", e);
+                debug!(target: "cinnabarclone", " Skipping ({e})");
             }
         }
     }

@@ -12,11 +12,11 @@ use std::os::raw::c_int;
 #[cfg(windows)]
 use std::os::windows::io::{FromRawHandle, IntoRawHandle};
 use std::process::{self, ChildStdin, ChildStdout, Command, Stdio};
+use std::ptr;
 use std::str::FromStr;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use std::{mem, ptr};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;
@@ -168,7 +168,7 @@ impl HgWireConnection for HgStdioConnection {
 
         let len = input.metadata().unwrap().len();
         //TODO: chunk in smaller pieces.
-        writeln!(proc_in, "{}", len).unwrap();
+        writeln!(proc_in, "{len}").unwrap();
 
         let is_bundle2 = if len > 4 {
             let header = input.read_exactly(4).unwrap();
@@ -327,7 +327,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         proc,
         thread: None,
         url: url.clone(),
-        synchronizer: synchronizer.clone(),
+        synchronizer: Arc::clone(&synchronizer),
     };
 
     conn.thread = Some(
@@ -427,7 +427,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
 
     let buf = stdio_read_response(&mut conn, "capabilities");
     if *buf != b"\n"[..] {
-        mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&buf));
+        conn.capabilities = HgCapabilities::new_from(&buf);
         /* Now read the response for the "between" command. */
         stdio_read_response(&mut conn, "between");
     }
