@@ -521,3 +521,15 @@ that recreated the tags from scratch are expected to be identical.
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/tags/TAG_C
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/tags/TAG_C_2
 
+  $ set_date
+  $ git -C repo-git cinnabar tag -m "tag d" TAG_D_2 7937e1a594596ae25c637d317503d775767671b5 --onto tags_3
+  $ git -C repo-git log --oneline --graph tags_3
+  * 2653315 tag d
+
+Older versions would not detect the tag already exists.
+
+  $ set_date
+  $ git -C repo-git cinnabar tag -m "tag d" TAG_D_2 7937e1a594596ae25c637d317503d775767671b5 --onto tags_3
+  \r (no-eol) (esc)
+  ERROR tag 'TAG_D_2' already exists
+  [1]

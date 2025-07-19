@@ -687,7 +687,20 @@ fn do_tag(
     committish: Option<OsString>,
 ) -> Result<(), String> {
     // TODO: `hg tag`` doesn't allow to create a tag on a non-head without `-f`.
-    let tags = store.get_tags();
+    let head = if let Some(onto) = &onto {
+        resolve_ref(onto)
+    } else {
+        Some(resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD"))
+    };
+    let tags = {
+        store.get_tags_from(
+            store
+                .changeset_heads()
+                .heads()
+                .filter_map(|h| h.to_git(store))
+                .chain(head.map(GitChangesetId::from_unchecked)),
+        )
+    };
     let tag = tag.expect("clap should have ensured it's Some at this point");
     let tag = tag.as_bytes();
     validate_label(tag, "tag")?;
@@ -721,11 +734,6 @@ fn do_tag(
             current_csid.or_else(|| tags.ever_contained(tag).then_some(HgChangesetId::NULL)),
             csid,
         )
-    };
-    let head = if let Some(onto) = &onto {
-        resolve_ref(onto)
-    } else {
-        Some(resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD"))
     };
     let tree = if let Some(head) = head {
         RawTree::read_treeish(head).unwrap()

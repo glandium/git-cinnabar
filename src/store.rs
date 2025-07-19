@@ -1341,11 +1341,18 @@ impl PartialEq for TagSet {
 
 impl Store {
     pub fn get_tags(&self) -> TagSet {
+        self.get_tags_from(
+            self.changeset_heads()
+                .heads()
+                .filter_map(|h| h.to_git(self)),
+        )
+    }
+
+    pub fn get_tags_from(&self, heads: impl Iterator<Item = GitChangesetId>) -> TagSet {
         let mut tags = TagSet::default();
         let mut tags_files = HashSet::new();
-        for head in self.changeset_heads().heads() {
+        for head in heads {
             (|| -> Option<()> {
-                let head = head.to_git(self)?;
                 let tags_file = get_oid_blob(format!("{head}:.hgtags").as_bytes())?;
                 if tags_files.insert(tags_file) {
                     let tags_blob = RawBlob::read(tags_file).unwrap();
