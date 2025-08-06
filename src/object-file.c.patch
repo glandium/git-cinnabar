@@ -6,9 +6,9 @@ index 1644a0d985..24b821dafd 100644
  #include "setup.h"
  #include "streaming.h"
  
-+#define write_object_file_flags real_write_object_file_flags
++#define write_object_file real_write_object_file
 +
-+int real_write_object_file_flags(const void *buf, size_t len,
++int real_write_object_file(struct odb_source *source, const void *buf, size_t len,
 +			    enum object_type type, struct object_id *oid,
 +			    struct object_id *compat_oid_in, unsigned flags);
 +
