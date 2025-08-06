@@ -225,7 +225,7 @@ static void init_git_config(void)
 static void cleanup_git_config(int nongit)
 {
 	const char *value;
-	if (!git_config_get_value("cinnabar.fsck", &value)) {
+	if (!repo_config_get_value(the_repository, "cinnabar.fsck", &value)) {
 		// We used to set cinnabar.fsck globally, then locally.
 		// Remove both.
 		char *user_config, *xdg_config;
@@ -235,13 +235,13 @@ static void cleanup_git_config(int nongit)
 				xdg_config &&
 				!access_or_warn(xdg_config, R_OK, 0))
 			{
-				git_config_set_in_file_gently(
-					xdg_config, "cinnabar.fsck", NULL,
-					NULL);
+				repo_config_set_in_file_gently(
+					the_repository, xdg_config,
+					"cinnabar.fsck", NULL, NULL);
 			} else {
-				git_config_set_in_file_gently(
-					user_config, "cinnabar.fsck", NULL,
-					NULL);
+				repo_config_set_in_file_gently(
+					the_repository, user_config,
+					"cinnabar.fsck", NULL, NULL);
 			}
 		}
 		free(user_config);
@@ -249,9 +249,9 @@ static void cleanup_git_config(int nongit)
 		if (!nongit) {
 			user_config = repo_git_path(the_repository, "config");
 			if (user_config) {
-				git_config_set_in_file_gently(
-					user_config, "cinnabar.fsck", NULL,
-					NULL);
+				repo_config_set_in_file_gently(
+					the_repository, user_config,
+					"cinnabar.fsck", NULL, NULL);
 			}
 			free(user_config);
 		}
@@ -389,7 +389,7 @@ int init_cinnabar(const char *argv0)
 
 	init_git_config();
 	setup_git_directory_gently(&nongit);
-	git_config(git_diff_basic_config, NULL);
+	repo_config(the_repository, git_diff_basic_config, NULL);
 	cleanup_git_config(nongit);
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;

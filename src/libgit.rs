@@ -195,9 +195,14 @@ extern "C" {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
+pub struct object_database([u8; 0]);
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
 pub struct repository {
     gitdir: *const c_char,
     commondir: *const c_char,
+    objects: *mut object_database,
 }
 
 #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
@@ -247,8 +252,8 @@ impl Default for object_info {
 }
 
 extern "C" {
-    fn oid_object_info_extended(
-        r: *mut repository,
+    fn odb_read_object_info_extended(
+        r: *mut object_database,
         oid: *const object_id,
         oi: *mut object_info,
         flags: c_uint,
@@ -335,7 +340,9 @@ pub fn git_object_info(
         info.sizep = &mut len;
         info.contentp = &mut buf;
     }
-    (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
+    (unsafe {
+        odb_read_object_info_extended((*the_repository).objects, &oid.into().into(), &mut info, 0)
+    } == 0)
         .then(|| {
             (
                 t,
