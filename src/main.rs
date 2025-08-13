@@ -547,7 +547,7 @@ impl HgConnection for BundleSaverConnection {
         Ok(Box::new(&b"HG20\0\0\0\0\0\0\0\0"[..]))
     }
 
-    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse {
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse<'_> {
         unimplemented!()
     }
 

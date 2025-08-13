@@ -804,7 +804,7 @@ impl HgWireConnection for HgHttpConnection {
         }
     }
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse<'_> {
         let mut http_req = self.start_command_request(command, args);
         http_req.post_data(input);
         http_req.header("Content-Type", "application/mercurial-0.1");

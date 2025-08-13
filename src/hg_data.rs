@@ -86,8 +86,8 @@ impl<'a> From<Authorship<'a>> for GitAuthorship<Box<[u8]>> {
     }
 }
 
-fn normalize_hg_author(author: &[u8]) -> (Cow<[u8]>, Cow<[u8]>) {
-    fn cleanup(s: &BStr) -> Cow<[u8]> {
+fn normalize_hg_author(author: &[u8]) -> (Cow<'_, [u8]>, Cow<'_, [u8]>) {
+    fn cleanup(s: &BStr) -> Cow<'_, [u8]> {
         if s.find_byteset(b"<>").is_some() {
             let mut s = s.to_vec();
             s.retain(|&b| b != b'<' && b != b'>');

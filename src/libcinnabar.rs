@@ -32,11 +32,11 @@ impl strslice<'_> {
 }
 
 pub trait AsStrSlice {
-    fn as_str_slice(&self) -> strslice;
+    fn as_str_slice(&self) -> strslice<'_>;
 }
 
 impl<T: AsRef<[u8]> + ?Sized> AsStrSlice for T {
-    fn as_str_slice(&self) -> strslice {
+    fn as_str_slice(&self) -> strslice<'_> {
         let buf = self.as_ref();
         strslice {
             len: buf.len(),

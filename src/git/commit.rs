@@ -23,7 +23,7 @@ impl TreeIsh for CommitId {
 super::raw_object!(OBJ_COMMIT | CommitId => RawCommit);
 
 impl RawCommit {
-    pub fn parse(&self) -> Option<Commit> {
+    pub fn parse(&self) -> Option<Commit<'_>> {
         let [header, body] = self.as_bytes().splitn_exact(&b"\n\n"[..])?;
         let mut tree = None;
         let mut parents = Vec::new();
