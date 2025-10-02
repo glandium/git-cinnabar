@@ -15,7 +15,7 @@ from tasks import (
 )
 from util import build_commit
 
-MERCURIAL_VERSION = "6.9.1"
+MERCURIAL_VERSION = "7.1.1"
 GIT_VERSION = "2.51.0"
 
 ALL_MERCURIAL_VERSIONS = (
@@ -69,7 +69,9 @@ ALL_MERCURIAL_VERSIONS = (
     "6.6.3",
     "6.7.4",
     "6.8.2",
-    "6.9.1",
+    "6.9.5",
+    "7.0.3",
+    "7.1.1",
 )
 
 SOME_MERCURIAL_VERSIONS = (
