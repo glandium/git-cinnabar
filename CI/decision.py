@@ -444,8 +444,8 @@ def main():
 
     RUNNER = {
         "linux": "ubuntu-latest",
-        "osx": "macos-13",
-        "macos": "macos-14",
+        "osx": "macos-15-intel",
+        "macos": "macos-15",
         "windows": "windows-latest",
     }
     matrix = {}
