@@ -31,6 +31,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           release: true
           update: false
@@ -41,7 +42,9 @@ jobs:
             patch
         if: runner.os == 'Windows'
       - name: Update PATH
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}/mingw64/bin
         run: |
-          (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
+          echo "$Env:MSYS2_LOCATION" >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
       - run: cargo package
