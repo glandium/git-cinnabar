@@ -2869,7 +2869,7 @@ fn do_fsck(
     if !String::from_utf8_lossy(commit.body())
         .split_ascii_whitespace()
         .sorted()
-        .eq(["files-meta", "unified-manifests-v2"].into_iter())
+        .eq(["files-meta", "unified-manifests-v2"])
     {
         eprintln!(
             "The git-cinnabar metadata is incompatible with this version.\n\

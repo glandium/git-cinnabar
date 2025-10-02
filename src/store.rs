@@ -2498,7 +2498,7 @@ pub fn merge_metadata(
         || !String::from_utf8_lossy(commit.body())
             .split_ascii_whitespace()
             .sorted()
-            .eq(["files-meta", "unified-manifests-v2"].into_iter())
+            .eq(["files-meta", "unified-manifests-v2"])
     {
         error!(target: "root", "Invalid cinnabar metadata.");
         return false;
