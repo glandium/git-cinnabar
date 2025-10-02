@@ -47,8 +47,6 @@ class Osx(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = "osx"
     WORKER_TYPE = "osx"
     os_version = "10.15"
-    SDK_VERSION = "14.2"
-    XCODE_VERSION = "15.2"
 
 
 class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
