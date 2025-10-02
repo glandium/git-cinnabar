@@ -239,9 +239,9 @@ class Hg(Task, metaclass=Tool):
                 env_.setdefault("_PYTHON_HOST_PLATFORM", py_host_plat)
             else:
                 if python == "python3":
-                    platform_tag = "mingw_x86_64"
-                    python_tag = "cp311"
-                    abi_tag = "cp311"
+                    platform_tag = "mingw_x86_64_msvcrt_gnu"
+                    python_tag = "cp312"
+                    abi_tag = "cp312"
                 else:
                     platform_tag = "mingw"
                     python_tag = "cp27"
