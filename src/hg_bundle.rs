@@ -1177,7 +1177,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         let git_parents = [parent1, parent2]
             .into_iter()
             .filter(|p| !p.is_null())
-            .map(|p| (p.to_git(store).unwrap().into()))
+            .map(|p| p.to_git(store).unwrap().into())
             .collect_vec();
         for (path, (hg_file, hg_fileparents)) in
             get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)
