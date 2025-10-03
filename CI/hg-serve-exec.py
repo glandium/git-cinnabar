@@ -8,6 +8,7 @@ import base64
 import os
 import shutil
 import subprocess
+import sys
 
 try:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
@@ -183,8 +184,8 @@ class OtherServer(object):
             cls = HgLogging(SimpleHTTPRequestHandler)
         else:
             assert False
-        self.httpd = HTTPServer(
-            ("", ui.configint(b"serve", b"otherport", 8080)),
+        self.httpd = MyHTTPServer(
+            ("localhost", ui.configint(b"serve", b"otherport", 8080)),
             cls,
         )
         self.httpd.accesslog = openlog(ui.config(b"web", b"accesslog"), ui.fout)
@@ -194,29 +195,152 @@ class OtherServer(object):
         self.httpd.serve_forever()
 
 
+from mercurial.hgweb.server import MercurialHTTPServer
+
+def create_srv(ui, app):
+    from mercurial.hgweb.server import _httprequesthandlerssl, _httprequesthandler, IPv6HTTPServer
+    from mercurial.utils import urlutil
+    import socket
+    from mercurial import error, encoding
+    from mercurial.i18n import _
+    if ui.config(b'web', b'certificate'):
+        handler = _httprequesthandlerssl
+    else:
+        handler = _httprequesthandler
+
+    if ui.configbool(b'web', b'ipv6'):
+        cls = IPv6HTTPServer
+    else:
+        cls = MyMercurialHTTPServer
+
+    sys.stderr.write("before mimetypes\n")
+    # ugly hack due to python issue5853 (for threaded use)
+    import mimetypes
+
+    mimetypes.init()
+    sys.stderr.write("after mimetypes\n")
+
+    address = ui.config(b'web', b'address')
+    port = urlutil.getport(ui.config(b'web', b'port'))
+    sys.stderr.write("before %s ; %r\n" % (cls.__name__, (address, port)))
+    try:
+        return cls(ui, app, (address, port), handler)
+    except socket.error as inst:
+        raise error.Abort(
+            _(b"cannot start server at '%s:%d': %s")
+            % (address, port, encoding.strtolocal(inst.args[1]))
+        )
+    finally:
+        sys.stderr.write("after %s ; %r\n" % (cls.__name__, (address, port)))
+
+
+class MyHTTPServer(HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
+        sys.stderr.write("enter MyHTTPServer.__init__\n")
+        try:
+            HTTPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
+        finally:
+            sys.stderr.write("exit MyHTTPServer.__init__\n")
+
+    def server_bind(self):
+        import socketserver, socket
+        sys.stderr.write("enter MyHTTPServer.server_bind\n")
+        try:
+            sys.stderr.write("before TCPServer.server_bind\n")
+            socketserver.TCPServer.server_bind(self)
+            sys.stderr.write("after TCPServer.server_bind\n")
+            host, port = self.server_address[:2]
+            self.server_name = socket.getfqdn(host)
+            sys.stderr.write("after getfqdn %r\n" % host)
+            self.server_port = port
+        finally:
+            sys.stderr.write("exit MyHTTPServer.server_bind\n")
+
+    def server_activate(self):
+        sys.stderr.write("enter MyHTTPServer.server_activate\n")
+        try:
+            HTTPServer.server_activate(self)
+        finally:
+            sys.stderr.write("exit MyHTTPServer.server_activate\n")
+
+    def server_close(self):
+        sys.stderr.write("enter MyHTTPServer.server_close\n")
+        try:
+            HTTPServer.server_close(self)
+        finally:
+            sys.stderr.write("exit MyHTTPServer.server_close\n")
+
+
+class MyMercurialHTTPServer(MercurialHTTPServer, MyHTTPServer):
+    def __init__(self, ui, app, addr, handler, **kwargs):
+        MyHTTPServer.__init__(self, addr, handler, **kwargs)
+        self.daemon_threads = True
+        self.application = app
+
+        handler.preparehttpserver(self, ui)
+
+        prefix = ui.config(b'web', b'prefix')
+        if prefix:
+            prefix = b'/' + prefix.strip(b'/')
+        self.prefix = prefix
+
+        alog = openlog(ui.config(b'web', b'accesslog'), ui.fout)
+        elog = openlog(ui.config(b'web', b'errorlog'), ui.ferr)
+        self.accesslog = alog
+        self.errorlog = elog
+
+        self.addr, self.port = self.socket.getsockname()[0:2]
+        self.fqaddr = self.server_name
+
+        self.serverheader = ui.config(b'web', b'server-header')
+
+
 @command(b"serve-and-exec", ())
 def serve_and_exec(ui, repo, *command):
+  from mercurial.hgweb import server
+  create_server_ = server.create_server
+
+  def create_server2(ui, app):
+      sys.stderr.write("enter create_server\n")
+      try:
+        return create_srv(ui, app)
+      finally:
+        sys.stderr.write("exit create_server\n")
+
+  server.create_server = create_server2
+
+  sys.stderr.write("Started serve_and_exec\n")
+  try:
     other_server = ui.config(b"serve", b"other", None)
     if other_server:
         other_server = OtherServer(other_server, ui)
         other_server_thread = Thread(target=other_server.run)
         other_server_thread.start()
+    sys.stderr.write("serve_and_exec: after other server\n")
     ui.setconfig(b"web", b"push_ssl", False, b"hgweb")
     ui.setconfig(b"web", b"allow_push", b"*", b"hgweb")
     # For older versions of mercurial
     repo.baseui.setconfig(b"web", b"push_ssl", False, b"hgweb")
     repo.baseui.setconfig(b"web", b"allow_push", b"*", b"hgweb")
+    sys.stderr.write("serve_and_exec: before hgweb\n")
     app = hgweb.hgweb(repo, baseui=ui)
+    sys.stderr.write("serve_and_exec: after hgweb\n")
     service = httpservice(
         ui, app, {b"port": ui.configint(b"web", b"port", 8000), b"print_url": False}
     )
+    sys.stderr.write("serve_and_exec: after httpservice\n")
     service.init()
+    sys.stderr.write("serve_and_exec: after service.init\n")
     service_thread = Thread(target=service.run)
     service_thread.start()
+    sys.stderr.write("serve_and_exec: after service_thread.start\n")
     ret = subprocess.call([getattr(os, "fsdecode", lambda a: a)(a) for a in command])
+    sys.stderr.write("serve_and_exec: after subprocess\n")
     service.httpd.shutdown()
     service_thread.join()
     if other_server:
         other_server.httpd.shutdown()
         other_server_thread.join()
     return ret
+  finally:
+    sys.stderr.write("Ended serve_and_exec\n")

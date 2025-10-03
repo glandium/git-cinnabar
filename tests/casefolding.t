@@ -24,6 +24,7 @@ Test repository setup.
   > [extensions]
   > x = $TESTDIR/../CI/hg-serve-exec.py
   > [web]
+  > address = localhost.
   > accesslog = /dev/null
   > errorlog = /dev/null
   > EOF

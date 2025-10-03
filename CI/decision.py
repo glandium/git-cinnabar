@@ -329,10 +329,11 @@ def decision():
             clone=False,
             command=pre_command
             + [
-                "cram --verbose repo/tests",
+                "cram --debug repo/tests 2>&1 | awk '{ cmd = \"date +[%H:%M:%S.%N]\"; cmd | getline ts; close(cmd); print ts, $0 }'",
             ],
             env={
                 "GIT_CINNABAR_CHECK": "no-version-check",
+                "GIT_TRACE": "1",
             },
         )
 

@@ -80,6 +80,7 @@ Incremental cinnabarclone with git http smart protocol
   > x = $TESTDIR/../CI/hg-serve-exec.py
   > cinnabarclone = $TESTDIR/../mercurial/cinnabarclone.py
   > [web]
+  > address = localhost.
   > accesslog = $CRAMTMP/accesslog
   > errorlog = /dev/null
   > [serve]
