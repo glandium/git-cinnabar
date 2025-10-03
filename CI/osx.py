@@ -15,8 +15,8 @@ from tasks import (
 class OsxCommon(object):
     os = "macos"
     cpu = "x86_64"
-    SDK_VERSION = "15.2"
-    XCODE_VERSION = "16.2"
+    SDK_VERSION = "15.5"
+    XCODE_VERSION = "16.4"
 
     def __init__(self, name):
         self.hexdigest = hashlib.sha1(self.ITERATION.encode("utf-8")).hexdigest()
