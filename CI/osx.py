@@ -15,6 +15,8 @@ from tasks import (
 class OsxCommon(object):
     os = "macos"
     cpu = "x86_64"
+    SDK_VERSION = "15.2"
+    XCODE_VERSION = "16.2"
 
     def __init__(self, name):
         self.hexdigest = hashlib.sha1(self.ITERATION.encode("utf-8")).hexdigest()
@@ -30,11 +32,12 @@ class OsxCommon(object):
         params["command"] = bash_command(*command)
         env = params.setdefault("env", {})
         dev = env.setdefault(
-            "DEVELOPER_DIR", "/Applications/Xcode_15.2.app/Contents/Developer"
+            "DEVELOPER_DIR",
+            f"/Applications/Xcode_{self.XCODE_VERSION}.app/Contents/Developer",
         )
         env.setdefault(
             "SDKROOT",
-            "{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk".format(dev),
+            f"{dev}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX{self.SDK_VERSION}.sdk",
         )
         return params
 
@@ -44,6 +47,8 @@ class Osx(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = "osx"
     WORKER_TYPE = "osx"
     os_version = "10.15"
+    SDK_VERSION = "14.2"
+    XCODE_VERSION = "15.2"
 
 
 class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
@@ -62,8 +67,8 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
 
 class MacosSDK(Task, metaclass=Tool):
     PREFIX = "macossdk"
-    SDK_VERSION = "14.5"
-    XCODE_VERSION = "15.4"
+    SDK_VERSION = OsxCommon.SDK_VERSION
+    XCODE_VERSION = OsxCommon.XCODE_VERSION
 
     def __init__(self, name):
         dev = f"/Applications/Xcode_{self.XCODE_VERSION}.app/Contents/Developer"
