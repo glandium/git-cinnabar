@@ -12,7 +12,7 @@ import re
 from collections import OrderedDict
 from uuid import UUID
 
-from pkg_resources import parse_version  # noqa: F401
+from packaging.version import parse as parse_version  # noqa: F401
 from variables import *  # noqa: F403
 
 rand = random.Random()
