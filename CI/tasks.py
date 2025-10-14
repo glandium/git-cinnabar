@@ -12,11 +12,14 @@ import re
 from collections import OrderedDict
 from uuid import UUID
 
-from pkg_resources import parse_version  # noqa: F401
 from variables import *  # noqa: F403
 
 rand = random.Random()
 rand.seed(int(hashlib.sha256(TC_COMMIT.encode()).hexdigest(), 16))
+
+
+def parse_version(version):
+    return tuple(int(x) for x in version.split("."))
 
 
 def uuid4():
