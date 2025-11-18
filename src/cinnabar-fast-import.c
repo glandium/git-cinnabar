@@ -177,7 +177,7 @@ static void cleanup(void)
 	if (require_explicit_termination)
 		object_count = 0;
 	end_packfile();
-	reprepare_packed_git(the_repository);
+	odb_reprepare(the_repository->objects);
 
 	if (!require_explicit_termination) {
 		if (update_shallow) {
@@ -208,8 +208,8 @@ void do_cleanup(int rollback)
 static void start_packfile(void)
 {
 	real_start_packfile();
-	install_packed_git(the_repository, pack_data);
-	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
+	packfile_store_add_pack(the_repository->objects->packfiles, pack_data);
+	list_add_tail(&pack_data->mru, &the_repository->objects->packfiles->mru);
 }
 
 static void end_packfile(void)
@@ -238,15 +238,15 @@ static void end_packfile(void)
 	/* uninstall_packed_git(pack_data) */
 	if (pack_data) {
 		struct packed_git *pack, *prev;
-		for (prev = NULL, pack = the_repository->objects->packed_git;
+		for (prev = NULL, pack = packfile_store_get_packs(the_repository->objects->packfiles);
 		     pack; prev = pack, pack = pack->next) {
 			if (pack != pack_data)
 				continue;
 			if (prev)
 				prev->next = pack->next;
 			else
-				the_repository->objects->packed_git = pack->next;
-			hashmap_remove(&the_repository->objects->pack_map,
+				the_repository->objects->packfiles->packs = pack->next;
+			hashmap_remove(&the_repository->objects->packfiles->map,
 			               &pack_data->packmap_ent,
 			               pack_data->pack_name);
 			break;
