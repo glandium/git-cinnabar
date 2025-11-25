@@ -7,12 +7,6 @@ all:
 
 .SUFFIXES:
 
--include git-core/config.mak.uname
-
-git-core/config.mak.uname:
-	git submodule sync
-	git submodule update --init
-
 all: git-cinnabar$X git-remote-hg$X
 
 CARGO ?= cargo

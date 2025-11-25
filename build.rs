@@ -37,7 +37,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use itertools::Itertools;
 use make_cmd::gnu_make;
@@ -117,6 +117,22 @@ fn main() {
     } else {
         &[][..]
     };
+
+    if !dir.join("git-core").join("Makefile").exists() {
+        for subcmd in [
+            &["submodule", "sync"][..],
+            &["submodule", "update", "--init"],
+        ] {
+            Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(subcmd)
+                .status()
+                .ok()
+                .filter(ExitStatus::success)
+                .expect("Failed to run git submodule command");
+        }
+    }
 
     let out_dir = PathBuf::from(env_os("OUT_DIR"));
 
