@@ -15,10 +15,6 @@ SOURCE_DIR = $(subst \,/,$(CARGO_MANIFEST_DIR))
 vpath %.c $(SOURCE_DIR)/git-core
 vpath version-def.h.in $(SOURCE_DIR)/git-core
 
-$(SOURCE_DIR)/git-core/Makefile:
-	git -C $(SOURCE_DIR) submodule sync
-	git -C $(SOURCE_DIR) submodule update --init
-
 gitweb/Makefile:
 	mkdir -p ${@D}
 	touch $@

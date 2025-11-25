@@ -118,6 +118,22 @@ fn main() {
         &[][..]
     };
 
+    if !dir.join("git-core").join("Makefile").exists() {
+        for subcmd in [
+            &["submodule", "sync"][..],
+            &["submodule", "update", "--init"],
+        ] {
+            Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(subcmd)
+                .status()
+                .ok()
+                .filter(|status| status.success())
+                .expect("Failed to run git submodule command");
+        }
+    }
+
     let out_dir = PathBuf::from(env_os("OUT_DIR"));
 
     let mut make = gnu_make();
