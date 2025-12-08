@@ -2309,7 +2309,7 @@ fn do_bundle(
     let commits = rev_list(revs).map(|c| {
         let commit = RawCommit::read(c).unwrap();
         let commit = commit.parse().unwrap();
-        (c, commit.parents().to_boxed(), None)
+        (c, commit.parents().to_boxed(), None, None)
     });
     let file = File::create(path).unwrap();
     let result = do_create_bundle(store, commits, bundlespec, version, &file, false).map(|_| 0);
@@ -2413,7 +2413,12 @@ fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) 
     mid
 }
 
-fn create_root_changeset(store: &Store, cid: CommitId, branch: Option<&BStr>) -> HgChangesetId {
+fn create_root_changeset(
+    store: &Store,
+    cid: CommitId,
+    branch: Option<&BStr>,
+    topic: Option<&BStr>,
+) -> HgChangesetId {
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like.
     unsafe {
@@ -2436,7 +2441,7 @@ fn create_root_changeset(store: &Store, cid: CommitId, branch: Option<&BStr>) ->
     }
     paths.pop();
     let mid = create_manifest(store, &mut manifest, &[]);
-    let (csid, _) = create_changeset(store, cid, mid, Some(paths.to_boxed()), branch);
+    let (csid, _) = create_changeset(store, cid, mid, Some(paths.to_boxed()), branch, topic);
     csid
 }
 
@@ -2602,13 +2607,14 @@ fn create_simple_changeset(
     cid: CommitId,
     parent: CommitId,
     branch: Option<&BStr>,
+    topic: Option<&BStr>,
 ) -> [HgChangesetId; 2] {
     unsafe {
         ensure_store_init();
     }
     let parent_csid = GitChangesetId::from_unchecked(parent).to_hg(store).unwrap();
     let (mid, paths) = create_simple_manifest(store, cid, parent);
-    let (csid, _) = create_changeset(store, cid, mid, paths, branch);
+    let (csid, _) = create_changeset(store, cid, mid, paths, branch, topic);
     [csid, parent_csid]
 }
 
@@ -2618,6 +2624,7 @@ fn create_merge_changeset(
     parent1: CommitId,
     parent2: CommitId,
     branch: Option<&BStr>,
+    topic: Option<&BStr>,
 ) -> [HgChangesetId; 3] {
     static EXPERIMENTAL: std::sync::Once = std::sync::Once::new();
 
@@ -2642,7 +2649,7 @@ fn create_merge_changeset(
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
     if parent1_mid == parent2_mid {
         let (mid, paths) = create_simple_manifest(store, cid, parent1);
-        let (csid, _) = create_changeset(store, cid, mid, paths, branch);
+        let (csid, _) = create_changeset(store, cid, mid, paths, branch, topic);
         [csid, parent1_csid, parent2_csid]
     } else {
         let parent1_mn_cid = parent1_mid.to_git(store).unwrap();
@@ -2781,21 +2788,29 @@ fn create_merge_changeset(
                 Some(paths.into_boxed_slice()),
             )
         };
-        let (csid, _) = create_changeset(store, cid, mid, paths, branch);
+        let (csid, _) = create_changeset(store, cid, mid, paths, branch, topic);
         [csid, parent1_csid, parent2_csid]
     }
 }
 
 pub fn do_create_bundle(
     store: &Store,
-    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>, Option<Box<BStr>>)>,
+    commits: impl Iterator<
+        Item = (
+            CommitId,
+            Box<[CommitId]>,
+            Option<Box<BStr>>,
+            Option<Box<BStr>>,
+        ),
+    >,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let changesets = commits.map(move |(cid, parents, branch)| {
+    let changesets = commits.map(move |(cid, parents, branch, topic)| {
         let branch = branch.as_deref();
+        let topic = topic.as_deref();
         if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg(store) {
             let mut parents = parents.iter().copied();
             let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
@@ -2808,12 +2823,12 @@ pub fn do_create_bundle(
             [csid, parent1, parent2]
         } else if parents.is_empty() {
             [
-                create_root_changeset(store, cid, branch),
+                create_root_changeset(store, cid, branch, topic),
                 HgChangesetId::NULL,
                 HgChangesetId::NULL,
             ]
         } else if parents.len() == 1 {
-            let [csid, parent1] = create_simple_changeset(store, cid, parents[0], branch);
+            let [csid, parent1] = create_simple_changeset(store, cid, parents[0], branch, topic);
             [csid, parent1, HgChangesetId::NULL]
         } else if parents.len() == 2 {
             create_merge_changeset(
@@ -2822,6 +2837,7 @@ pub fn do_create_bundle(
                 *parents.first().unwrap(),
                 *parents.get(1).unwrap(),
                 branch,
+                topic,
             )
         } else {
             die!("Pushing octopus merges to mercurial is not supported");
@@ -4254,10 +4270,15 @@ bitflags! {
         const HEADS = 0x1;
         const BOOKMARKS = 0x2;
         const TIPS = 0x4;
+        const TOPICS = 0x8;
     }
 }
 
 impl RefsStyle {
+    fn default() -> Self {
+        RefsStyle::HEADS | RefsStyle::BOOKMARKS | RefsStyle::TIPS
+    }
+
     fn from_config(name: &str, remote: Option<&str>) -> Option<Self> {
         match get_config_remote(name, remote)
             .as_deref()
@@ -4273,8 +4294,9 @@ impl RefsStyle {
                         b"heads" => styles.set(RefsStyle::HEADS, true),
                         b"bookmarks" => styles.set(RefsStyle::BOOKMARKS, true),
                         b"tips" => styles.set(RefsStyle::TIPS, true),
+                        b"topics" => styles.set(RefsStyle::TOPICS, true),
                         _ => die!(
-                            "`{}` is not one of `heads`, `bookmarks` or `tips`",
+                            "`{}` is not one of `heads`, `bookmarks`, `tips`, or `topics`",
                             c.as_bstr()
                         ),
                     }
@@ -4305,7 +4327,7 @@ fn repo_list(
         .then(|| RefsStyle::from_config("pushrefs", remote))
         .flatten()
         .or_else(|| RefsStyle::from_config("refs", remote))
-        .unwrap_or(RefsStyle::all());
+        .unwrap_or(RefsStyle::default());
 
     let mut refs = BTreeMap::new();
 
@@ -4330,17 +4352,46 @@ fn repo_list(
     };
 
     let branchmap = ByteSlice::lines(&*conn.branchmap())
-        .map(|l| {
+        .filter_map(|l| {
             let [b, h] = l.splitn_exact(b' ').unwrap();
-            (
+            if conn.get_capability(b"topics-namespaces").is_some()
+                && b.contains_str("//")
+                && !b.ends_with_str("//")
+            {
+                // It's a topic, not a branch.
+                return None;
+            }
+            Some((
                 b.as_bstr().to_boxed(),
                 h.split(|&b| b == b' ')
                     .map(HgChangesetId::from_bytes)
                     .collect::<Result<Box<[_]>, _>>()
                     .unwrap(),
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
+    let topicmap = if conn.get_capability(b"topics-namespaces").is_none() {
+        HashMap::new()
+    } else {
+        ByteSlice::lines(&*conn.branchmap())
+            .filter_map(|l| {
+                let [bt, h] = l.splitn_exact(b' ').unwrap();
+                let [b, t] = bt.rsplitn_exact(&b"//"[..])?;
+                if t.is_empty() {
+                    // It's a branch with an internal `//', not a
+                    // topic -- a topic may not end with `//'.
+                    return None;
+                }
+                Some((
+                    (b.as_bstr().to_boxed(), t.as_bstr().to_boxed()),
+                    h.split(|&b| b == b' ')
+                        .map(HgChangesetId::from_bytes)
+                        .collect::<Result<Box<[_]>, _>>()
+                        .unwrap(),
+                ))
+            })
+            .collect::<HashMap<_, _>>()
+    };
     let bookmarks = ByteSlice::lines(&*conn.bookmarks())
         .map(|l| {
             let [b, h] = l.splitn_exact(b'\t').unwrap();
@@ -4354,9 +4405,9 @@ fn repo_list(
     let mut head_template = None;
     let mut tip_template = None;
     let mut default_tip = None;
-    if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS) {
+    if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS | RefsStyle::TOPICS) {
         if refs_style.contains(RefsStyle::HEADS | RefsStyle::TIPS) {
-            if refs_style.contains(RefsStyle::BOOKMARKS) {
+            if refs_style.intersects(RefsStyle::BOOKMARKS | RefsStyle::TOPICS) {
                 head_template = Some(&["refs/heads/branches/", "", "/", ""][..]);
                 tip_template = Some(&["refs/heads/branches/", "", "/tip"][..]);
             } else {
@@ -4367,7 +4418,7 @@ fn repo_list(
             head_template = Some(&["refs/heads/branches/", "", "/", ""]);
         } else if refs_style.contains(RefsStyle::HEADS) {
             head_template = Some(&["refs/heads/", "", "/", ""]);
-        } else if refs_style.contains(RefsStyle::TIPS | RefsStyle::BOOKMARKS) {
+        } else if refs_style.contains(RefsStyle::TIPS | RefsStyle::BOOKMARKS | RefsStyle::TOPICS) {
             tip_template = Some(&["refs/heads/branches/", ""]);
         } else if refs_style.contains(RefsStyle::TIPS) {
             tip_template = Some(&["refs/heads/", ""]);
@@ -4408,11 +4459,52 @@ fn repo_list(
             }
         }
     }
+    if refs_style.contains(RefsStyle::TOPICS) {
+        let topic_head_template;
+        let topic_tip_template;
+        if refs_style.contains(RefsStyle::HEADS) {
+            topic_head_template = Some(&["refs/heads/topics/", "", "/", "", "/", ""][..]);
+            topic_tip_template = Some(&["refs/heads/topics/", "", "/", "", "/tip"][..]);
+        } else {
+            topic_head_template = None;
+            topic_tip_template = Some(&["refs/heads/topics/", "", "/", ""][..]);
+        }
+        for ((branch, topic), heads) in topicmap.iter() {
+            // Use the last non-closed head as tip if there's more than one head.
+            // Caveat: we don't know a head is closed until we've pulled it.
+            let mut tip = None;
+            for head in heads.iter().rev() {
+                tip = Some(head);
+                if let Some(store) = store {
+                    if let Some(git_head) = head.to_git(store) {
+                        let metadata = RawGitChangesetMetadata::read(store, git_head).unwrap();
+                        let metadata = metadata.parse().unwrap();
+                        if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
+                            continue;
+                        }
+                    }
+                }
+                break;
+            }
+            if let Some(tip) = tip {
+                add_ref(topic_tip_template, &[branch, topic], *tip);
+            }
+            for head in heads.iter() {
+                if topic_tip_template.is_none() || Some(head) != tip {
+                    add_ref(
+                        topic_head_template,
+                        &[branch, topic, head.to_string().as_bytes().as_bstr()],
+                        *head,
+                    );
+                }
+            }
+        }
+    }
 
     let mut bookmark_template = None;
     if refs_style.contains(RefsStyle::BOOKMARKS) {
         bookmark_template = Some(
-            if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS) {
+            if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS | RefsStyle::TOPICS) {
                 &["refs/heads/bookmarks/", ""][..]
             } else {
                 &["refs/heads/", ""]
@@ -4708,7 +4800,7 @@ fn remote_helper_push(
     let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
         if info
             .refs_style
-            .intersects(RefsStyle::HEADS | RefsStyle::TIPS)
+            .intersects(RefsStyle::HEADS | RefsStyle::TIPS | RefsStyle::TOPICS)
         {
             b"refs/heads/bookmarks/".as_bstr()
         } else {
@@ -4784,25 +4876,27 @@ fn remote_helper_push(
                         .filter_map(|(c, _, _)| c.as_ref().map(ToString::to_string)),
                 ),
         )
-        .map(|(c, p)| (c, p, None))
+        .map(|(c, p)| (c, p, None, None))
         .collect_vec();
 
         if experiment(Experiments::BRANCH)
             && info
                 .refs_style
-                .intersects(RefsStyle::HEADS | RefsStyle::TIPS)
+                .intersects(RefsStyle::HEADS | RefsStyle::TIPS | RefsStyle::TOPICS)
         {
             #[derive(Clone, Debug)]
             enum BranchInfo {
-                Known(Option<Box<BStr>>),
-                Inferred(Option<Box<BStr>>),
-                Set(Option<Box<BStr>>),
+                Known(Option<Box<BStr>>, Option<Box<BStr>>),
+                Inferred(Option<Box<BStr>>, Option<Box<BStr>>),
+                Set(Option<Box<BStr>>, Option<Box<BStr>>),
             }
 
             impl BranchInfo {
-                fn unwrap(self) -> Option<Box<BStr>> {
+                fn unwrap(self) -> (Option<Box<BStr>>, Option<Box<BStr>>) {
                     match self {
-                        BranchInfo::Known(b) | BranchInfo::Inferred(b) | BranchInfo::Set(b) => b,
+                        BranchInfo::Known(b, t)
+                        | BranchInfo::Inferred(b, t)
+                        | BranchInfo::Set(b, t) => (b, t),
                     }
                 }
             }
@@ -4811,13 +4905,18 @@ fn remote_helper_push(
                 let cs_metadata =
                     RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(c))?;
                 let cs_metadata = cs_metadata.parse().unwrap();
-                Some(BranchInfo::Known(cs_metadata.extra().and_then(|e| {
-                    e.get(b"branch").map(|b| b.as_bstr().to_boxed())
-                })))
+                Some(BranchInfo::Known(
+                    cs_metadata
+                        .extra()
+                        .and_then(|e| e.get(b"branch").map(|b| b.as_bstr().to_boxed())),
+                    cs_metadata
+                        .extra()
+                        .and_then(|e| e.get(b"topic").map(|b| b.as_bstr().to_boxed())),
+                ))
             };
 
             let mut dag: Dag<CommitId, RefCell<Option<BranchInfo>>> = Dag::new();
-            for (c, p, _) in &push_commits {
+            for (c, p, _, _) in &push_commits {
                 dag.add(
                     *c,
                     p,
@@ -4826,58 +4925,80 @@ fn remote_helper_push(
                             dag.get(*p)
                                 .and_then(|(_, b)| {
                                     b.clone().into_inner().map(|b| match b {
-                                        BranchInfo::Inferred(b) => BranchInfo::Inferred(b),
-                                        BranchInfo::Known(b) => BranchInfo::Inferred(b),
-                                        BranchInfo::Set(_) => unreachable!(),
+                                        BranchInfo::Inferred(b, t) => BranchInfo::Inferred(b, t),
+                                        BranchInfo::Known(b, t) => BranchInfo::Inferred(b, t),
+                                        BranchInfo::Set(_, _) => unreachable!(),
                                     })
                                 })
                                 .or_else(|| {
-                                    get_branch(*p).map(|b| BranchInfo::Inferred(b.unwrap()))
+                                    get_branch(*p).map(|b| {
+                                        let (b, t) = b.unwrap();
+                                        BranchInfo::Inferred(b, t)
+                                    })
                                 })
                         })
                     })),
                 );
             }
 
-            let prefix = if info.refs_style.contains(RefsStyle::BOOKMARKS) {
+            let branch_prefix = if info
+                .refs_style
+                .intersects(RefsStyle::BOOKMARKS | RefsStyle::TOPICS)
+            {
                 &b"refs/heads/branches/"[..]
             } else {
                 &b"refs/heads/"[..]
             };
-            for (c, branch) in push_refs.iter().filter_map(|(c, remote_ref, _)| {
+            let topic_prefix = if info.refs_style.contains(RefsStyle::TOPICS) {
+                Some(&b"refs/heads/topics/"[..])
+            } else {
+                None
+            };
+            for (c, branch, topic) in push_refs.iter().filter_map(|(c, remote_ref, _)| {
                 c.and_then(|c| {
-                    remote_ref.strip_prefix(prefix).and_then(|s| {
+                    if let Some(s) = remote_ref.strip_prefix(branch_prefix) {
                         if info.refs_style.contains(RefsStyle::HEADS) {
-                            s.splitn_exact::<2>(b'/').map(|[b, _]| (c, b))
-                        } else {
-                            Some((c, s))
+                            return s.splitn_exact::<2>(b'/').map(|[b, _]| (c, b, None));
                         }
-                    })
+                        return Some((c, s, None));
+                    }
+                    if let Some(topic_prefix) = topic_prefix {
+                        if let Some(s) = remote_ref.strip_prefix(topic_prefix) {
+                            if info.refs_style.contains(RefsStyle::HEADS) {
+                                return s.splitn_exact::<3>(b'/').map(|[b, t, _]| (c, b, Some(t)));
+                            }
+                            return s.splitn_exact::<2>(b'/').map(|[b, t]| (c, b, Some(t)));
+                        }
+                    }
+                    None
                 })
             }) {
                 for (_, info) in dag.traverse_parents(&[c], |_, info| {
-                    matches!(*info.borrow(), Some(BranchInfo::Inferred(_)) | None)
+                    matches!(*info.borrow(), Some(BranchInfo::Inferred(_, _)) | None)
                 }) {
-                    if matches!(*info.borrow(), Some(BranchInfo::Inferred(_)) | None) {
+                    if matches!(*info.borrow(), Some(BranchInfo::Inferred(_, _)) | None) {
                         info.replace(Some(BranchInfo::Set(
                             (branch != b"default").then(|| branch.as_bstr().to_boxed()),
+                            topic.map(|topic| topic.as_bstr().to_boxed()),
                         )));
                     }
                 }
             }
-            for (c, _, b) in &mut push_commits {
+            for (c, _, bbox, tbox) in &mut push_commits {
                 if let Some((_, info)) = dag.get(*c) {
-                    *b = info
+                    let (b, t) = info
                         .borrow()
                         .clone()
                         .expect("Branch name should have been set")
                         .unwrap();
+                    *bbox = b;
+                    *tbox = t;
                 }
             }
         }
 
         if !push_commits.is_empty() {
-            let has_root = push_commits.iter().any(|(_, p, _)| p.is_empty());
+            let has_root = push_commits.iter().any(|(_, p, _, _)| p.is_empty());
             if has_root && !no_topological_heads {
                 if !force {
                     return Err("Cannot push a new root".to_string());
