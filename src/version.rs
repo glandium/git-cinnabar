@@ -258,12 +258,7 @@ pub static BUILD_BRANCH: Lazy<BuildBranch> = Lazy::new(|| {
 });
 pub static FULL_VERSION: Value<str> = Lazy::new(|| {
     if is_overridden(&SHORT_VERSION) || is_overridden(&BUILD_COMMIT) || is_overridden(&MODIFIED) {
-        full_version!(
-            SHORT_VERSION.as_ref(),
-            BUILD_COMMIT.as_ref(),
-            *MODIFIED.as_ref(),
-            join
-        )
+        full_version!(&**SHORT_VERSION, &**BUILD_COMMIT, **MODIFIED, join)
     } else {
         Cow::Borrowed(static_::FULL_VERSION)
     }

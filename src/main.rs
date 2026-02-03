@@ -3819,8 +3819,8 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=SHORT_VERSION.as_ref(),
-    long_version=FULL_VERSION.as_ref(),
+    version=&**SHORT_VERSION,
+    long_version=&**FULL_VERSION,
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
     subcommand_required = true,
