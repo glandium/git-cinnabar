@@ -519,8 +519,11 @@ impl HttpRequest {
 impl Read for HttpResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.cursor.read(buf)?;
-        if n == 0 && self.receiver.is_some() {
-            match self.receiver.as_ref().unwrap().recv() {
+        if n != 0 {
+            return Ok(n);
+        }
+        match self.receiver.as_ref() {
+            Some(receiver) => match receiver.recv() {
                 Ok(Either::Right(mut data)) => {
                     self.cursor.set_position(0);
                     mem::swap(self.cursor.get_mut(), &mut data);
@@ -538,9 +541,8 @@ impl Read for HttpResponse {
                     Ok(0)
                 }
                 _ => unreachable!(),
-            }
-        } else {
-            Ok(n)
+            },
+            None => Ok(n),
         }
     }
 }
