@@ -135,7 +135,7 @@ version = "0.1"
 optional = true
 
 [target.'cfg(windows)'.dependencies.zip]
-version = "4"
+version = "7"
 default-features = false
 features = ["deflate-flate2-zlib"]
 optional = true
