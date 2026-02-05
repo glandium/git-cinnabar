@@ -35,6 +35,8 @@ impl<'a> From<&'a [u8]> for mmfile_t<'a> {
 #[derive(Default)]
 struct xpparam_t {
     flags: c_ulong,
+    ignore_regex: Option<NonNull<c_void>>,
+    ignore_regex_nr: usize,
     anchors: Option<NonNull<*const c_char>>,
     anchors_nr: usize,
 }
@@ -59,7 +61,7 @@ extern "C" {
         hunk_fn: Option<
             extern "C" fn(*mut c_void, c_long, c_long, c_long, c_long, *const c_char, c_long),
         >,
-        line_fn: Option<extern "C" fn(*mut c_void, *const c_char, c_ulong)>,
+        line_fn: Option<extern "C" fn(*mut c_void, *const c_char, c_ulong) -> c_int>,
         consume_callback_data: *mut c_void,
         xpp: *const xpparam_t,
         xecfg: *const xdemitconf_t,
