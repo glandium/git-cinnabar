@@ -118,13 +118,16 @@ TODO: Ideally, the error message would say the server could not be connected to.
   $ rm -rf repo-git
 
 - Server listens but does not serve a repository or bundle
-TODO: git errors are repeating and lack newlines.
+TODO: git errors are repeating. They also lack newlines before git 2.53.0.
 
   $ sed -i.bak '/other/s/=.*/= git/' $REPO/.hg/hgrc
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git 2>&1 | sed -E -f $TESTDIR/git-http-backend-workaround.sed
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
-  Not a git repository: '.*/cinnabarclone.t'Not a git repository: '.*/cinnabarclone.t'Request not supported: '.*/cinnabarclone.t/'.* (re)
+  Not a git repository: '.*/cinnabarclone.t' (re)
+  Not a git repository: '.*/cinnabarclone.t' (re)
+  Request not supported: '.*/cinnabarclone.t/'.* (re)
+  \r (no-eol) (esc)
   ERROR Could not find cinnabar metadata
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.

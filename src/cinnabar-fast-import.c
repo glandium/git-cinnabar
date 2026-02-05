@@ -208,8 +208,7 @@ void do_cleanup(int rollback)
 static void start_packfile(void)
 {
 	real_start_packfile();
-	packfile_store_add_pack(the_repository->objects->packfiles, pack_data);
-	list_add_tail(&pack_data->mru, &the_repository->objects->packfiles->mru);
+	packfile_store_add_pack(the_repository->objects->sources->packfiles, pack_data);
 }
 
 static void end_packfile(void)
@@ -237,21 +236,7 @@ static void end_packfile(void)
 
 	/* uninstall_packed_git(pack_data) */
 	if (pack_data) {
-		struct packed_git *pack, *prev;
-		for (prev = NULL, pack = packfile_store_get_packs(the_repository->objects->packfiles);
-		     pack; prev = pack, pack = pack->next) {
-			if (pack != pack_data)
-				continue;
-			if (prev)
-				prev->next = pack->next;
-			else
-				the_repository->objects->packfiles->packs = pack->next;
-			hashmap_remove(&the_repository->objects->packfiles->map,
-			               &pack_data->packmap_ent,
-			               pack_data->pack_name);
-			break;
-		}
-		list_del_init(&pack_data->mru);
+		packfile_list_remove(&the_repository->objects->sources->packfiles->packs, pack_data);
 		close_pack_windows(pack_data);
 	}
 

@@ -22,7 +22,7 @@
 #include "strslice.h"
 #include "strbuf.h"
 #include "string-list.h"
-#include "streaming.h"
+#include "odb/streaming.h"
 #include "object.h"
 #include "oidset.h"
 #include "path.h"

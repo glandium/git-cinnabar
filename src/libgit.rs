@@ -931,19 +931,23 @@ pub fn for_each_remote<E, F: FnMut(&remote) -> Result<(), E>>(f: F) -> Result<()
     }
 }
 
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct reference {
+    name: *const c_char,
+    target: *const c_char,
+    oid: *const object_id,
+    peeled_oid: *const object_id,
+    flags: c_uint,
+}
+
 extern "C" {
     pub fn get_main_ref_store(r: *mut repository) -> *mut ref_store;
 
     pub fn refs_for_each_ref_in(
         refs: *const ref_store,
         prefix: *const c_char,
-        cb: unsafe extern "C" fn(
-            *const c_char,
-            *const c_char,
-            *const object_id,
-            c_int,
-            *mut c_void,
-        ) -> c_int,
+        cb: unsafe extern "C" fn(*const reference, *mut c_void) -> c_int,
         cb_data: *mut c_void,
     ) -> c_int;
 }
@@ -959,15 +963,14 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
     let prefix = prefix.as_ref().to_cstring();
 
     unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
-        refname: *const c_char,
-        _referent: *const c_char,
-        oid: *const object_id,
-        _flags: c_int,
+        r#ref: *const reference,
         cb_data: *mut c_void,
     ) -> c_int {
+        let r#ref = r#ref.as_ref().unwrap();
         let (func, ref mut error) = (cb_data as *mut (F, Option<E>)).as_mut().unwrap();
-        let refname = OsStr::from_bytes(CStr::from_ptr(refname).to_bytes());
-        if let Ok(oid) = CommitId::try_from(GitObjectId::from(oid.as_ref().unwrap().clone())) {
+        let refname = OsStr::from_bytes(CStr::from_ptr(r#ref.name).to_bytes());
+        if let Ok(oid) = CommitId::try_from(GitObjectId::from(r#ref.oid.as_ref().unwrap().clone()))
+        {
             match func(refname, oid) {
                 Ok(()) => 0,
                 Err(e) => {
