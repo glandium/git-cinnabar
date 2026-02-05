@@ -111,9 +111,9 @@ use itertools::{EitherOrBoth, Itertools};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, git_author_info, git_committer_info, lookup_commit,
-    lookup_replace_commit, object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
-    rev_list_with_boundaries, rev_list_with_parents, the_repository, DiffTreeItem, FileMode,
-    MaybeBoundary, RefTransaction,
+    lookup_replace_commit, object_id, reachable_subset, ref_store, remote, repository, resolve_ref,
+    rev_list, rev_list_with_boundaries, rev_list_with_parents, the_repository, DiffTreeItem,
+    FileMode, MaybeBoundary, RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -1215,7 +1215,7 @@ extern "C" {
 
     fn get_worktree_head_oid(wt: *const worktree) -> *const object_id;
 
-    fn get_worktree_ref_store(wr: *const worktree) -> *const libgit::ref_store;
+    fn get_worktree_ref_store(wr: *const worktree) -> *const ref_store;
 }
 
 fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
