@@ -176,7 +176,7 @@ extern "C" {
         note_oid: *const object_id,
     ) -> c_int;
 
-    fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
+    fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8) -> c_int;
 
     fn cinnabar_write_notes_tree(
         notes: *mut cinnabar_notes_tree,
