@@ -261,9 +261,9 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-int write_object_file(struct odb_source *source UNUSED, const void *buf, size_t len,
-		      enum object_type type, struct object_id *oid,
-		      struct object_id *compat_oid_in UNUSED, unsigned flags UNUSED)
+int odb_source_loose_write_object(struct odb_source *source UNUSED, const void *buf, size_t len,
+                                  enum object_type type, struct object_id *oid,
+                                  struct object_id *compat_oid_in UNUSED, unsigned flags UNUSED)
 {
 	struct strslice data;
 	data.buf = (void *)buf;
