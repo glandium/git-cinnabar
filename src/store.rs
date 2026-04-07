@@ -114,7 +114,7 @@ impl Store {
 }
 
 impl Store {
-    pub fn changeset_heads(&self) -> Ref<ChangesetHeads> {
+    pub fn changeset_heads(&self) -> Ref<'_, ChangesetHeads> {
         self.changeset_heads_
             .get_or_init(|| {
                 RefCell::new(if self.changesets_cid.is_null() {
@@ -126,12 +126,12 @@ impl Store {
             .borrow()
     }
 
-    pub fn changeset_heads_mut(&self) -> RefMut<ChangesetHeads> {
+    pub fn changeset_heads_mut(&self) -> RefMut<'_, ChangesetHeads> {
         self.changeset_heads();
         self.changeset_heads_.get().unwrap().borrow_mut()
     }
 
-    pub fn manifest_heads(&self) -> Ref<ManifestHeads> {
+    pub fn manifest_heads(&self) -> Ref<'_, ManifestHeads> {
         self.manifest_heads_
             .get_or_init(|| {
                 RefCell::new(if self.manifests_cid.is_null() {
@@ -143,40 +143,40 @@ impl Store {
             .borrow()
     }
 
-    pub fn manifest_heads_mut(&self) -> RefMut<ManifestHeads> {
+    pub fn manifest_heads_mut(&self) -> RefMut<'_, ManifestHeads> {
         self.manifest_heads();
         self.manifest_heads_.get().unwrap().borrow_mut()
     }
 
-    pub fn hg2git(&self) -> Ref<hg_notes_tree> {
+    pub fn hg2git(&self) -> Ref<'_, hg_notes_tree> {
         self.hg2git_
             .get_or_init(|| RefCell::new(hg_notes_tree::new_with(self.hg2git_cid)))
             .borrow()
     }
 
-    pub fn hg2git_mut(&self) -> RefMut<hg_notes_tree> {
+    pub fn hg2git_mut(&self) -> RefMut<'_, hg_notes_tree> {
         self.hg2git();
         self.hg2git_.get().unwrap().borrow_mut()
     }
 
-    pub fn git2hg(&self) -> Ref<git_notes_tree> {
+    pub fn git2hg(&self) -> Ref<'_, git_notes_tree> {
         self.git2hg_
             .get_or_init(|| RefCell::new(git_notes_tree::new_with(self.git2hg_cid)))
             .borrow()
     }
 
-    pub fn git2hg_mut(&self) -> RefMut<git_notes_tree> {
+    pub fn git2hg_mut(&self) -> RefMut<'_, git_notes_tree> {
         self.git2hg();
         self.git2hg_.get().unwrap().borrow_mut()
     }
 
-    pub fn files_meta(&self) -> Ref<hg_notes_tree> {
+    pub fn files_meta(&self) -> Ref<'_, hg_notes_tree> {
         self.files_meta_
             .get_or_init(|| RefCell::new(hg_notes_tree::new_with(self.files_meta_cid)))
             .borrow()
     }
 
-    pub fn files_meta_mut(&self) -> RefMut<hg_notes_tree> {
+    pub fn files_meta_mut(&self) -> RefMut<'_, hg_notes_tree> {
         self.files_meta();
         self.files_meta_.get().unwrap().borrow_mut()
     }
@@ -235,7 +235,7 @@ impl RawGitChangesetMetadata {
         RawBlob::read(note).map(Self)
     }
 
-    pub fn parse(&self) -> Option<ParsedGitChangesetMetadata> {
+    pub fn parse(&self) -> Option<ParsedGitChangesetMetadata<'_>> {
         let mut changeset = None;
         let mut manifest = None;
         let mut author = None;
@@ -297,7 +297,7 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
         self.author.as_ref().map(B::as_ref)
     }
 
-    pub fn extra(&self) -> Option<ChangesetExtra> {
+    pub fn extra(&self) -> Option<ChangesetExtra<'_>> {
         self.extra
             .as_ref()
             .map(|b| ChangesetExtra::from(b.as_ref()))
@@ -316,7 +316,7 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
         split
     }
 
-    pub fn patch(&self) -> Option<GitChangesetPatch> {
+    pub fn patch(&self) -> Option<GitChangesetPatch<'_>> {
         self.patch.as_ref().map(|b| GitChangesetPatch(b.as_ref()))
     }
 
@@ -631,7 +631,7 @@ impl RawHgChangeset {
         Self::from_metadata(store, &commit, &metadata)
     }
 
-    pub fn parse(&self) -> Option<HgChangeset> {
+    pub fn parse(&self) -> Option<HgChangeset<'_>> {
         let [header, body] = self.0.splitn_exact(&b"\n\n"[..])?;
         let mut lines = header.splitn(4, |&b| b == b'\n');
         let manifest = lines.next()?;
@@ -670,7 +670,7 @@ pub struct HgChangeset<'a> {
 }
 
 impl HgChangeset<'_> {
-    pub fn extra(&self) -> Option<ChangesetExtra> {
+    pub fn extra(&self) -> Option<ChangesetExtra<'_>> {
         self.extra.map(ChangesetExtra::from)
     }
 
@@ -1341,11 +1341,18 @@ impl PartialEq for TagSet {
 
 impl Store {
     pub fn get_tags(&self) -> TagSet {
+        self.get_tags_from(
+            self.changeset_heads()
+                .heads()
+                .filter_map(|h| h.to_git(self)),
+        )
+    }
+
+    pub fn get_tags_from(&self, heads: impl Iterator<Item = GitChangesetId>) -> TagSet {
         let mut tags = TagSet::default();
         let mut tags_files = HashSet::new();
-        for head in self.changeset_heads().heads() {
+        for head in heads {
             (|| -> Option<()> {
-                let head = head.to_git(self)?;
                 let tags_file = get_oid_blob(format!("{head}:.hgtags").as_bytes())?;
                 if tags_files.insert(tags_file) {
                     let tags_blob = RawBlob::read(tags_file).unwrap();
@@ -2491,7 +2498,7 @@ pub fn merge_metadata(
         || !String::from_utf8_lossy(commit.body())
             .split_ascii_whitespace()
             .sorted()
-            .eq(["files-meta", "unified-manifests-v2"].into_iter())
+            .eq(["files-meta", "unified-manifests-v2"])
     {
         error!(target: "root", "Invalid cinnabar metadata.");
         return false;

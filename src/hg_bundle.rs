@@ -119,7 +119,7 @@ impl RevChunk {
         )
     }
 
-    pub fn iter_diff(&self) -> RevDiffIter {
+    pub fn iter_diff(&self) -> RevDiffIter<'_> {
         RevDiffIter(&self.raw[if self.delta_node.is_some() { 80 } else { 100 }..])
     }
 }
@@ -436,7 +436,7 @@ impl<'a> BundleReader<'a> {
         })
     }
 
-    pub fn next_part(&mut self) -> io::Result<Option<BundlePartReader>> {
+    pub fn next_part(&mut self) -> io::Result<Option<BundlePartReader<'_>>> {
         let reader = {
             let (cursor, _) = self.reader.get_mut();
             if cursor.position() >= cursor.get_ref().as_ref().len() as u64 {
@@ -674,7 +674,7 @@ impl<'a> BundleWriter<'a> {
         })
     }
 
-    pub fn new_part(&mut self, info: BundlePartInfo) -> io::Result<BundlePartWriter<32768>> {
+    pub fn new_part(&mut self, info: BundlePartInfo) -> io::Result<BundlePartWriter<'_, 32768>> {
         match self.version {
             BundleVersion::V1 => {
                 assert!(self.last_part_id.is_none());
@@ -1177,7 +1177,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         let git_parents = [parent1, parent2]
             .into_iter()
             .filter(|p| !p.is_null())
-            .map(|p| (p.to_git(store).unwrap().into()))
+            .map(|p| p.to_git(store).unwrap().into())
             .collect_vec();
         for (path, (hg_file, hg_fileparents)) in
             get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)

@@ -28,17 +28,19 @@ runs:
       shell: bash
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       run: echo "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin:$PATH" >> $GITHUB_ENV
-    - uses: actions/setup-python@v5
+    - uses: astral-sh/setup-uv@v6
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       with:
+        version: '0.9.0'
         python-version: ${{ runner.arch == 'ARM64' && '3.11.7' || '3.9.14' }}
+        activate-environment: true
     - name: Finish python setup
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       shell: bash
       run: |
-        python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
+        uv pip install pip==20.3.4 wheel==0.37.0 --upgrade
     - name: ${{ inputs.name }}
       shell: bash
       if: ${{ steps.cache.outputs.cache-hit != 'true' }}
       run: |
-        python3 CI/run.py --cache cache --no-recurse --out . "${{ inputs.name }}"
+        ${{ runner.os == 'macOS' && 'uv run' || 'python3' }} CI/run.py --cache cache --no-recurse --out . "${{ inputs.name }}"

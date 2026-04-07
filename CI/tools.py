@@ -15,8 +15,8 @@ from tasks import (
 )
 from util import build_commit
 
-MERCURIAL_VERSION = "6.9.1"
-GIT_VERSION = "2.50.1"
+MERCURIAL_VERSION = "7.2"
+GIT_VERSION = "2.53.0"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
@@ -69,7 +69,10 @@ ALL_MERCURIAL_VERSIONS = (
     "6.6.3",
     "6.7.4",
     "6.8.2",
-    "6.9.1",
+    "6.9.5",
+    "7.0.3",
+    "7.1.2",
+    "7.2",
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -239,9 +242,9 @@ class Hg(Task, metaclass=Tool):
                 env_.setdefault("_PYTHON_HOST_PLATFORM", py_host_plat)
             else:
                 if python == "python3":
-                    platform_tag = "mingw_x86_64"
-                    python_tag = "cp311"
-                    abi_tag = "cp311"
+                    platform_tag = "mingw_x86_64_msvcrt_gnu"
+                    python_tag = "cp312"
+                    abi_tag = "cp312"
                 else:
                     platform_tag = "mingw"
                     python_tag = "cp27"
@@ -334,7 +337,7 @@ class Hg(Task, metaclass=Tool):
         return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
-def install_rust(version="1.88.0", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.93.0", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
@@ -424,7 +427,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        environ["CC"] = "clang-20"
+        environ["CC"] = "clang-21"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -458,7 +461,7 @@ class Build(Task, metaclass=Tool):
             environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
                 f"-C link-arg={arg}" for arg in link_args
             )
-            environ["AR"] = "llvm-ar-20"
+            environ["AR"] = "llvm-ar-21"
             rustflags = environ.pop("RUSTFLAGS", None)
             if rustflags:
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"

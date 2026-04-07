@@ -6,10 +6,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-        toolchain: [1.88.0]
+        toolchain: [1.93.0]
         include:
           - os: windows-latest
-            toolchain: 1.88.0-x86_64-pc-windows-gnu
+            toolchain: 1.93.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           release: true
           update: false
@@ -37,8 +38,10 @@ jobs:
             patch
         if: runner.os == 'Windows'
       - name: Update PATH
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}/mingw64/bin
         run: |
-          (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
+          echo "$Env:MSYS2_LOCATION"/mingw64/bin >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
       - uses: actions-rs-plus/clippy-check@v2
         with:
@@ -59,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.88.0
+          toolchain: 1.93.0
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -68,10 +71,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.88.0, 1.75.0]
+        toolchain: [1.93.0, 1.75.0]
         include:
           - os: windows-latest
-            toolchain: 1.88.0-x86_64-pc-windows-gnu
+            toolchain: 1.93.0-x86_64-pc-windows-gnu
           - os: windows-latest
             toolchain: 1.75.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
@@ -90,6 +93,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           release: true
           update: false
@@ -100,7 +104,9 @@ jobs:
             patch
         if: runner.os == 'Windows'
       - name: Update PATH
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}/mingw64/bin
         run: |
-          (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
+          echo "$Env:MSYS2_LOCATION" >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
       - run: cargo test

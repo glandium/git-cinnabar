@@ -177,7 +177,7 @@ static void cleanup(void)
 	if (require_explicit_termination)
 		object_count = 0;
 	end_packfile();
-	reprepare_packed_git(the_repository);
+	odb_reprepare(the_repository->objects);
 
 	if (!require_explicit_termination) {
 		if (update_shallow) {
@@ -208,8 +208,7 @@ void do_cleanup(int rollback)
 static void start_packfile(void)
 {
 	real_start_packfile();
-	install_packed_git(the_repository, pack_data);
-	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
+	packfile_store_add_pack(the_repository->objects->sources->packfiles, pack_data);
 }
 
 static void end_packfile(void)
@@ -237,21 +236,7 @@ static void end_packfile(void)
 
 	/* uninstall_packed_git(pack_data) */
 	if (pack_data) {
-		struct packed_git *pack, *prev;
-		for (prev = NULL, pack = the_repository->objects->packed_git;
-		     pack; prev = pack, pack = pack->next) {
-			if (pack != pack_data)
-				continue;
-			if (prev)
-				prev->next = pack->next;
-			else
-				the_repository->objects->packed_git = pack->next;
-			hashmap_remove(&the_repository->objects->pack_map,
-			               &pack_data->packmap_ent,
-			               pack_data->pack_name);
-			break;
-		}
-		list_del_init(&pack_data->mru);
+		packfile_list_remove(&the_repository->objects->sources->packfiles->packs, pack_data);
 		close_pack_windows(pack_data);
 	}
 
@@ -276,9 +261,9 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-int write_object_file_flags(const void *buf, size_t len, enum object_type type,
-                            struct object_id *oid, struct object_id *compat_oid_in UNUSED,
-                            unsigned flags UNUSED)
+int odb_source_loose_write_object(struct odb_source *source UNUSED, const void *buf, size_t len,
+                                  enum object_type type, struct object_id *oid,
+                                  struct object_id *compat_oid_in UNUSED, unsigned flags UNUSED)
 {
 	struct strslice data;
 	data.buf = (void *)buf;

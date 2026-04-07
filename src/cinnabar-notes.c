@@ -7,13 +7,6 @@
 #include "hash.h"
 #include "cinnabar-notes.h"
 
-#undef notes_tree
-#undef add_note
-#undef remove_note
-#undef get_note
-#undef for_each_note
-#undef write_notes_tree
-
 static int abbrev_sha1_cmp(const unsigned char *ref_sha1,
                            const unsigned char *abbrev_sha1, size_t len)
 {

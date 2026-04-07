@@ -49,7 +49,7 @@ pub enum HgArgValue<'a> {
 }
 
 impl HgArgValue<'_> {
-    pub fn as_string(&self) -> Cow<str> {
+    pub fn as_string(&self) -> Cow<'_, str> {
         match self {
             HgArgValue::String(s) => Cow::Borrowed(s),
             HgArgValue::ChangesetArray(a) => a.iter().join(" ").into(),
@@ -182,7 +182,7 @@ pub trait HgWireConnection: HgConnectionBase {
         args: HgArgs,
     ) -> Result<Box<dyn Read + 'a>, ImmutBString>;
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse;
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse<'_>;
 }
 
 pub trait HgConnection: HgConnectionBase {
@@ -195,7 +195,7 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse {
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse<'_> {
         unimplemented!();
     }
 
@@ -243,7 +243,7 @@ impl<T: HgWireConnection> HgConnection for T {
         self.changegroup_command("getbundle", args!(*: &args[..]))
     }
 
-    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse<'_> {
         let heads = if let Some(heads) = heads {
             if self.get_capability(b"unbundlehash").is_none() {
                 Either::Left(heads)
@@ -407,7 +407,7 @@ impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
         self.conn.changegroup_command(command, args)
     }
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse<'_> {
         if self.logging_enabled {
             Self::log_command(command, &args);
         }
@@ -526,7 +526,7 @@ impl<C: HgWireConnection> HgConnection for HgWired<C> {
         self.conn.getbundle(heads, common, bundle2caps)
     }
 
-    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse<'_> {
         self.conn.unbundle(heads, input)
     }
 
@@ -1304,7 +1304,7 @@ struct CinnabarCloneInfo<'a> {
     graft: Vec<GitObjectId>,
 }
 
-fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String> {
+fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo<'_>>, String> {
     let mut line = line.splitn(2, |&b| b == b' ');
     let (url, branch) = match line.next() {
         None => return Ok(None),

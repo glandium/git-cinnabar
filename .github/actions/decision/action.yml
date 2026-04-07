@@ -28,7 +28,7 @@ runs:
         node-version: '20.x'
     - shell: bash
       if: ${{ steps.decision.outputs.matrix }}
-      run: npm install @actions/cache
+      run: npm install @actions/cache@5
     - name: Check dependencies
       id: matrix
       if: ${{ steps.decision.outputs.matrix }}

@@ -17,32 +17,25 @@ struct cinnabar_notes_tree {
  * have been visited and nodes that have been dirtied, such that
  * on large notes tree, small modifications after large amount of
  * lookups induces a large cost when storing them.
- * So we transparently wrap the API to work around this problem. */
-#define notes_tree cinnabar_notes_tree
-#define add_note cinnabar_add_note
-#define remove_note cinnabar_remove_note
-#define get_note cinnabar_get_note
-#define for_each_note cinnabar_for_each_note
-#define write_notes_tree cinnabar_write_notes_tree
-
+ * So we wrap the API to work around this problem. */
 extern const struct object_id *get_abbrev_note(
-	struct notes_tree *t, const struct object_id *object_oid, size_t len);
+	struct cinnabar_notes_tree *t, const struct object_id *object_oid, size_t len);
 
-extern int add_note(
-	struct notes_tree *t, const struct object_id *object_oid,
+extern int cinnabar_add_note(
+	struct cinnabar_notes_tree *t, const struct object_id *object_oid,
 	const struct object_id *note_oid);
 
-int remove_note(struct notes_tree *t, const unsigned char *object_sha1);
+int cinnabar_remove_note(struct cinnabar_notes_tree *t, const unsigned char *object_sha1);
 
-const struct object_id *get_note(struct notes_tree *t,
-                                 const struct object_id *object_oid);
+const struct object_id *cinnabar_get_note(struct cinnabar_notes_tree *t,
+                                          const struct object_id *object_oid);
 
-int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
-                  void *cb_data);
+int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags, each_note_fn fn,
+                           void *cb_data);
 
-int write_notes_tree(struct notes_tree *t, struct object_id *result,
-                     unsigned int mode);
+int cinnabar_write_notes_tree(struct cinnabar_notes_tree *t, struct object_id *result,
+                              unsigned int mode);
 
-void consolidate_notes(struct notes_tree *t);
+void consolidate_notes(struct cinnabar_notes_tree *t);
 
 #endif

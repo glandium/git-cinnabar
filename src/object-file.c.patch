@@ -1,16 +1,16 @@
 diff --git a/object-file.c b/object-file.c
-index 1644a0d985..24b821dafd 100644
+index c5b74764f1..bab2038a0c 100644
 --- a/object-file.c
 +++ b/object-file.c
-@@ -29,6 +29,12 @@
- #include "setup.h"
- #include "streaming.h"
+@@ -30,6 +30,12 @@
+ #include "tempfile.h"
+ #include "tmp-objdir.h"
  
-+#define write_object_file_flags real_write_object_file_flags
++#define odb_source_loose_write_object real_odb_source_loose_write_object
 +
-+int real_write_object_file_flags(const void *buf, size_t len,
-+			    enum object_type type, struct object_id *oid,
-+			    struct object_id *compat_oid_in, unsigned flags);
++int real_odb_source_loose_write_object(struct odb_source *source, const void *buf, size_t len,
++                                       enum object_type type, struct object_id *oid,
++                                       struct object_id *compat_oid_in, unsigned flags);
 +
  /* The maximum size for an object header. */
  #define MAX_HEADER_LEN 32

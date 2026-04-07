@@ -1,3 +1,4 @@
 [submodule "git-core"]
 	path = git-core
-	url = https://github.com/git-for-windows/git
+	url = https://github.com/glandium/git
+	branch = move-rust

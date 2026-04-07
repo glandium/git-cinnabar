@@ -15,7 +15,7 @@ from tasks import (
 
 CPUS = ("x86_64",)
 MSYS_VERSION = {
-    "x86_64": "20240727",
+    "x86_64": "20250830",
 }
 
 
@@ -120,7 +120,7 @@ class MsysEnvironment(MsysCommon):
             "pkill gpg-agent",
             "pkill dirmngr",
             "rm -rf /var/cache/pacman/pkg",
-            "python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade",
+            "python3 -m pip install wheel==0.37.1 --upgrade",
             "mv {}/{}/bin/{{mingw32-,}}make.exe".format(msys(cpu), mingw(cpu)),
             "tar -c --hard-dereference {} | zstd -c > msys2.tar.zst".format(msys(cpu)),
         ]
@@ -148,8 +148,8 @@ class MsysEnvironment(MsysCommon):
             [
                 "curl",
                 "make",
-                "python3",
-                "python3-pip",
+                "python",
+                "python-pip",
             ]
         )
 

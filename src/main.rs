@@ -111,9 +111,9 @@ use itertools::{EitherOrBoth, Itertools};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, git_author_info, git_committer_info, lookup_commit,
-    lookup_replace_commit, object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
-    rev_list_with_boundaries, rev_list_with_parents, the_repository, DiffTreeItem, FileMode,
-    MaybeBoundary, RefTransaction,
+    lookup_replace_commit, object_id, reachable_subset, ref_store, remote, repository, resolve_ref,
+    rev_list, rev_list_with_boundaries, rev_list_with_parents, the_repository, DiffTreeItem,
+    FileMode, MaybeBoundary, RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -547,7 +547,7 @@ impl HgConnection for BundleSaverConnection {
         Ok(Box::new(&b"HG20\0\0\0\0\0\0\0\0"[..]))
     }
 
-    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse {
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse<'_> {
         unimplemented!()
     }
 
@@ -687,7 +687,20 @@ fn do_tag(
     committish: Option<OsString>,
 ) -> Result<(), String> {
     // TODO: `hg tag`` doesn't allow to create a tag on a non-head without `-f`.
-    let tags = store.get_tags();
+    let head = if let Some(onto) = &onto {
+        resolve_ref(onto)
+    } else {
+        Some(resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD"))
+    };
+    let tags = {
+        store.get_tags_from(
+            store
+                .changeset_heads()
+                .heads()
+                .filter_map(|h| h.to_git(store))
+                .chain(head.map(GitChangesetId::from_unchecked)),
+        )
+    };
     let tag = tag.expect("clap should have ensured it's Some at this point");
     let tag = tag.as_bytes();
     validate_label(tag, "tag")?;
@@ -721,11 +734,6 @@ fn do_tag(
             current_csid.or_else(|| tags.ever_contained(tag).then_some(HgChangesetId::NULL)),
             csid,
         )
-    };
-    let head = if let Some(onto) = &onto {
-        resolve_ref(onto)
-    } else {
-        Some(resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD"))
     };
     let tree = if let Some(head) = head {
         RawTree::read_treeish(head).unwrap()
@@ -1207,7 +1215,7 @@ extern "C" {
 
     fn get_worktree_head_oid(wt: *const worktree) -> *const object_id;
 
-    fn get_worktree_ref_store(wr: *const worktree) -> *const libgit::ref_store;
+    fn get_worktree_ref_store(wr: *const worktree) -> *const ref_store;
 }
 
 fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
@@ -2861,7 +2869,7 @@ fn do_fsck(
     if !String::from_utf8_lossy(commit.body())
         .split_ascii_whitespace()
         .sorted()
-        .eq(["files-meta", "unified-manifests-v2"].into_iter())
+        .eq(["files-meta", "unified-manifests-v2"])
     {
         eprintln!(
             "The git-cinnabar metadata is incompatible with this version.\n\
@@ -3811,8 +3819,8 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=SHORT_VERSION.as_ref(),
-    long_version=FULL_VERSION.as_ref(),
+    version=&**SHORT_VERSION,
+    long_version=&**FULL_VERSION,
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
     subcommand_required = true,

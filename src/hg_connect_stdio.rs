@@ -153,7 +153,12 @@ impl HgWireConnection for HgStdioConnection {
         }
     }
 
-    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> UnbundleResponse {
+    fn push_command(
+        &mut self,
+        mut input: File,
+        command: &str,
+        args: HgArgs,
+    ) -> UnbundleResponse<'_> {
         stdio_send_command(self, command, args);
         /* The server normally sends an empty response before reading the data
          * it's sent if not, it's an error (typically, the remote will
