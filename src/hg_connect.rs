@@ -452,13 +452,20 @@ impl<C: HgWireConnection> HgWired<C> {
             let bookmarks;
             let conn = &mut self.conn;
 
+            let branchmapcmd =
+                if conn.get_capability(b"topics-namespaces").is_none() {
+                    "branchmap"
+                } else {
+                    "branchmaptns"
+                };
+
             if conn.get_capability(b"batch").is_none() {
                 // Get bookmarks first because if we get them last and they have been
                 // updated after we got the heads, they may contain changesets we won't
                 // be pulling.
                 bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
                 loop {
-                    branchmap = conn.simple_command("branchmap", args!());
+                    branchmap = conn.simple_command(branchmapcmd, args!());
                     heads = conn.simple_command("heads", args!());
                     // Some heads in the branchmap can be non-heads topologically, and
                     // won't appear in the heads list, but if the opposite happens, then
@@ -480,7 +487,7 @@ impl<C: HgWireConnection> HgWired<C> {
                 let out = conn.simple_command(
                     "batch",
                     args!(
-                        cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                        cmds: format!("{} ;heads ;listkeys namespace=bookmarks", branchmapcmd).as_str(),
                         *: &[]
                     ),
                 );
