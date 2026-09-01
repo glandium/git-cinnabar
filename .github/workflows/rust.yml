@@ -109,4 +109,4 @@ jobs:
         run: |
           echo "$Env:MSYS2_LOCATION" >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
-      - run: cargo test
+      - run: cargo test --features self-update
