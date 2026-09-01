@@ -146,8 +146,10 @@ fn main() {
         .arg("USE_LIBPCRE2=")
         .arg("NO_REGEX=1")
         .arg("NO_ICONV=1")
+        .arg("NO_RUST=1")
         .arg("USE_MIMALLOC=")
         .arg("FSMONITOR_DAEMON_BACKEND=")
+        .arg("FSMONITOR_OS_SETTINGS=")
         .arg("GENERATED_H=")
         .args(extra_args);
 
@@ -294,6 +296,7 @@ fn main() {
         .arg("USE_LIBPCRE2=")
         .arg("USE_NED_ALLOCATOR=")
         .arg("NO_ICONV=1")
+        .arg("NO_RUST=1")
         .args(extra_args)
         .current_dir(&out_dir)
         .output()

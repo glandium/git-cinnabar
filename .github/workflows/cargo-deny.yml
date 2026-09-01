@@ -19,14 +19,14 @@ jobs:
       matrix:
         checks:
           - advisories
-          - bans licenses sources
+          - bans licenses sources -D parse-error -D unnecessary-skip -D license-exception-not-encountered
 
     # Prevent sudden announcement of a new advisory from failing ci:
     continue-on-error: ${{ matrix.checks == 'advisories' }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
       with:
         command: check ${{ matrix.checks }}
-        rust-version: "1.78.0"
+        rust-version: "1.96.1"

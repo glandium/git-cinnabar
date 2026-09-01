@@ -33,7 +33,8 @@ void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr);
 int remote_skip_default_update(const struct remote *remote);
 
-int init_cinnabar(const char *argv0);
+void init_cinnabar(const char *argv0);
+int init_cinnabar_2(void);
 
 void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,

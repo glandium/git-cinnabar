@@ -11,6 +11,7 @@ use std::sync::Mutex;
 
 use bstr::ByteSlice;
 use either::Either;
+use itertools::Itertools;
 use url::Url;
 
 use crate::cinnabar::GitChangesetId;
@@ -109,7 +110,7 @@ pub fn graft(
     changeset_id: HgChangesetId,
     raw_changeset: &RawHgChangeset,
     tree: TreeId,
-    parents: &[GitChangesetId],
+    parents: &[HgChangesetId],
 ) -> Result<Option<CommitId>, GraftError> {
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
     if graft_trees.is_empty() {
@@ -132,19 +133,22 @@ pub fn graft(
             if &*HgAuthorship::from(GitAuthorship(c.author())).timestamp != changeset.timestamp() {
                 return false;
             }
-            if c.parents()
-                .iter()
-                .copied()
-                .zip(parents.iter().copied())
-                .all(|(commit_parent, changeset_parent)| {
-                    lookup_replace_commit(commit_parent)
-                        == lookup_replace_commit(changeset_parent.into())
-                })
-            {
-                return true;
-            }
-            // Allow to graft if not already grafted.
+            // Mercurial may not have stored the same parent order as the git
+            // side to graft, as the order is not relevant when computing the
+            // revision hash.
+            // Also allow to graft if not already grafted.
             !grafted()
+                || c.parents()
+                    .iter()
+                    .filter_map(|c| {
+                        GitChangesetId::from_unchecked(lookup_replace_commit(*c)).to_hg(store)
+                    })
+                    .sorted()
+                    .zip_longest(parents.iter().sorted())
+                    .all(|parents| {
+                        let (a, b) = parents.left_and_right();
+                        a.as_ref() == b
+                    })
         })
         .collect::<Vec<_>>();
     let mut candidates = candidates.iter().collect::<Vec<_>>();

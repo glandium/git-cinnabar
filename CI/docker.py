@@ -32,7 +32,7 @@ def sources_list(snapshot, sections):
 LLVM_REPO = (
     "echo"
     " deb [signed-by=/usr/share/keyrings/llvm.gpg]"
-    " https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-21 main"
+    " https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-22 main"
     " > /etc/apt/sources.list.d/llvm.list"
 )
 
@@ -96,9 +96,9 @@ DOCKER_IMAGES = {
             "apt-get install -y --no-install-recommends {}".format(
                 " ".join(
                     [
-                        "clang-21",
-                        "lld-21",
-                        "llvm-21",
+                        "clang-22",
+                        "lld-22",
+                        "llvm-22",
                         "git",
                         "make",
                         "patch",
@@ -179,14 +179,14 @@ DOCKER_IMAGES = {
             "apt-get install -y --no-install-recommends {}".format(
                 " ".join(
                     [
-                        "llvm-21",
+                        "llvm-22",
                         "make",
                     ]
                 )
             ),
             "apt-get clean",
             "pip3 install cram==0.7",
-            "ln -s llvm-symbolizer-21 /usr/bin/llvm-symbolizer",
+            "ln -s llvm-symbolizer-22 /usr/bin/llvm-symbolizer",
         ],
     },
 }

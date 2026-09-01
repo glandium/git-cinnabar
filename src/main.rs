@@ -6,6 +6,7 @@
 #![allow(clippy::borrowed_box)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::new_without_default)]
+#![allow(clippy::result_large_err)]
 #![deny(clippy::clone_on_ref_ptr)]
 #![deny(clippy::cloned_instead_of_copied)]
 #![deny(clippy::default_trait_access)]
@@ -174,7 +175,8 @@ extern "C" {
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
-    fn init_cinnabar(argv0: *const c_char) -> c_int;
+    fn init_cinnabar(argv0: *const c_char);
+    fn init_cinnabar_2() -> c_int;
 }
 
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
@@ -1660,7 +1662,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 .filter_map(|(_, _, (_, cid), (_, old_cid))| {
                     cid.map(|c| c.len())
                         .into_iter()
-                        .chain((old_cid.map(|c| c.len())).into_iter())
+                        .chain(old_cid.map(|c| c.len()))
                         .max()
                 })
                 .max()
@@ -5213,13 +5215,22 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             }
             _ => {}
         }
+        // While e.g. git 2.44.0 doesn't materialize a full repository during
+        // git clone, by the time we reach here, it has. So if the first call
+        // to init_cinnabar_2 failed, we give it another try.
+        if !unsafe { HAS_GIT_REPO } {
+            unsafe {
+                HAS_GIT_REPO = init_cinnabar_2() != 0;
+            }
+            store = Lazy::new(the_store);
+        }
         let args = match cmd {
             b"import" | b"push" => args
                 .map(|a| a.as_bstr().to_boxed())
                 .chain(
                     (&mut stdin)
                         .byte_lines()
-                        .take_while(|l| l.as_ref().map(|l| !l.is_empty()).unwrap_or(true))
+                        .take_while(|l| l.as_ref().map_or(true, |l| !l.is_empty()))
                         .map(|line| {
                             line.unwrap()
                                 .strip_prefix(cmd)
@@ -5311,7 +5322,8 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             );
         }
     }));
-    HAS_GIT_REPO = init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr()) != 0;
+    init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
+    HAS_GIT_REPO = init_cinnabar_2() != 0;
     logging::init(now);
     experiment(Experiments::MERGE);
 

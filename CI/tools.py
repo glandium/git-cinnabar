@@ -16,7 +16,7 @@ from tasks import (
 from util import build_commit
 
 MERCURIAL_VERSION = "7.2"
-GIT_VERSION = "2.53.0"
+GIT_VERSION = "2.55.0"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
@@ -129,8 +129,8 @@ class Git(Task, metaclass=Tool):
                 )
                 + [
                     "make -C git -j$({}) install prefix=/ NO_GETTEXT=1"
-                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1 INSTALL_STRIP=-s"
-                    " DESTDIR=$PWD/git".format(nproc(build_image)),
+                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1 NO_RUST=1"
+                    " INSTALL_STRIP=-s DESTDIR=$PWD/git".format(nproc(build_image)),
                     "tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst".format(version),
                 ],
                 artifact="git-{}.tar.zst".format(version),
@@ -337,7 +337,7 @@ class Hg(Task, metaclass=Tool):
         return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
-def install_rust(version="1.93.0", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.96.1", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
@@ -427,7 +427,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        environ["CC"] = "clang-21"
+        environ["CC"] = "clang-22"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -461,7 +461,7 @@ class Build(Task, metaclass=Tool):
             environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
                 f"-C link-arg={arg}" for arg in link_args
             )
-            environ["AR"] = "llvm-ar-21"
+            environ["AR"] = "llvm-ar-22"
             rustflags = environ.pop("RUSTFLAGS", None)
             if rustflags:
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"

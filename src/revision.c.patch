@@ -1,8 +1,8 @@
 diff --git a/revision.c b/revision.c
-index 9a203ed7fd..edb8c67e0a 100644
+index e91d7e1f11..bdd24e5c68 100644
 --- a/revision.c
 +++ b/revision.c
-@@ -1356,7 +1356,7 @@ static int still_interesting(struct commit_list *src, timestamp_t date, int slop
+@@ -1316,7 +1316,7 @@ static int still_interesting(struct prio_queue *src, timestamp_t date, int slop,
  		return SLOP;
  
  	/* Ok, we're closing in.. */

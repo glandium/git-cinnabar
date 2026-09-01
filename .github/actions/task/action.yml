@@ -13,7 +13,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       if: ${{ fromJSON(inputs.artifacts) }}
       id: cache
       with:
@@ -28,7 +28,7 @@ runs:
       shell: bash
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       run: echo "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin:$PATH" >> $GITHUB_ENV
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       with:
         version: '0.9.0'

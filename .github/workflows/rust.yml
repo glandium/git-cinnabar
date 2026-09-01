@@ -6,16 +6,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-        toolchain: [1.93.0]
+        toolchain: [1.96.1]
         include:
           - os: windows-latest
-            toolchain: 1.93.0-x86_64-pc-windows-gnu
+            toolchain: 1.96.1-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -59,10 +59,10 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.93.0
+          toolchain: 1.96.1
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -71,18 +71,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.93.0, 1.75.0]
+        toolchain: [1.96.1, 1.75.0]
         include:
           - os: windows-latest
-            toolchain: 1.93.0-x86_64-pc-windows-gnu
+            toolchain: 1.96.1-x86_64-pc-windows-gnu
           - os: windows-latest
             toolchain: 1.75.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -109,4 +109,4 @@ jobs:
         run: |
           echo "$Env:MSYS2_LOCATION" >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
-      - run: cargo test
+      - run: cargo test --features self-update

@@ -10,7 +10,7 @@ use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::num::NonZeroU32;
-use std::os::raw::{c_char, c_int, c_ulong};
+use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::{mem, ptr};
@@ -1440,7 +1440,7 @@ extern "C" {
     );
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn get_object_entry(oid: *const object_id) -> *const object_entry;
-    fn unpack_object_entry(oe: *const object_entry, buf: *mut *mut c_char, len: *mut c_ulong);
+    fn unpack_object_entry(oe: *const object_entry, buf: *mut *mut c_char, len: *mut usize);
 }
 
 pub fn store_git_blob(blob_buf: &[u8]) -> BlobId {
@@ -1467,7 +1467,7 @@ pub fn store_git_tree(tree_buf: &[u8], reference: Option<TreeId>) -> TreeId {
                 let mut reftree_buf = ptr::null_mut();
                 let mut len = 0;
                 unpack_object_entry(oe, &mut reftree_buf, &mut len);
-                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut _, len as usize));
+                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut _, len));
             }
         }
         let mut result = object_id::default();
@@ -1724,16 +1724,20 @@ fn store_changeset(
     let tree_id = create_git_tree(store, manifest_tree_id, ref_tree, None);
 
     let (commit_id, metadata_id, transition) =
-        match graft(store, changeset_id, raw_changeset, tree_id, &git_parents) {
+        match graft(store, changeset_id, raw_changeset, tree_id, parents) {
             Ok(Some(commit_id)) => {
+                let commit = RawCommit::read(commit_id).unwrap();
+                let commit = commit.parse().unwrap();
                 let metadata = GeneratedGitChangesetMetadata::generate(
                     store,
-                    &RawCommit::read(commit_id).unwrap().parse().unwrap(),
+                    &commit,
                     changeset_id,
                     raw_changeset,
                 )
                 .unwrap();
-                if !grafted() && metadata.patch().is_some() {
+                if !grafted()
+                    && (metadata.patch().is_some() || commit.parents().len() != parents.len())
+                {
                     (Some(commit_id), None, true)
                 } else {
                     let buf = metadata.serialize();

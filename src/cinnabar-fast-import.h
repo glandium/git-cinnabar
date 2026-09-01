@@ -20,8 +20,7 @@ int maybe_handle_command(struct reader *helper_input, int helper_output,
 
 struct object_entry *get_object_entry(const struct object_id *oid);
 
-void unpack_object_entry(struct object_entry *oe, char **buf,
-                         unsigned long *len);
+void unpack_object_entry(struct object_entry *oe, char **buf, size_t *len);
 
 void store_git_tree(struct strslice tree_buf,
                     const struct object_id *reference,

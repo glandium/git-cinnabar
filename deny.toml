@@ -8,6 +8,11 @@ targets = [
 ]
 all-features = true
 
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0253", reason = "git-cinnabar does not call LruCache::pop, and its LRU key is a Copy byte-array wrapper with no Drop implementation" },
+]
+
 [licenses]
 allow = [
   "BSD-2-Clause",
@@ -16,7 +21,7 @@ allow = [
   "MPL-2.0",
 ]
 exceptions = [
-    { allow = ["GPL-2.0"], crate = "git-cinnabar" },
+    { allow = ["GPL-2.0-only"], crate = "git-cinnabar" },
     { allow = ["Unicode-3.0"], crate = "unicode-ident" },
     { allow = ["Unicode-3.0"], crate = "icu_collections" },
     { allow = ["Unicode-3.0"], crate = "icu_locid" },
@@ -41,10 +46,6 @@ exceptions = [
 
 [bans]
 multiple-versions = "deny"
-skip = [
-  { crate = "syn", reason = "ongoing transition from syn 1 to syn 2" },
-  { crate = "windows-sys", reason = "ongoing transition from windows-sys 0.52 to windows-sys 0.59. The alternative at the moment would be to stay with winapi, which is actually a bigger dependency." },
-]
 deny = [
   # Now that we're off winapi, let's stay that way.
   "winapi",

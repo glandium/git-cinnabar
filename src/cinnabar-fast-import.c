@@ -47,9 +47,9 @@ static void rollback(void) {
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-void real_hashwrite(struct hashfile *, const void *, unsigned int);
+void real_hashwrite(struct hashfile *, const void *, uint32_t);
 
-void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
+void hashwrite(struct hashfile *f, const void *buf, uint32_t count)
 {
 	size_t window_size;
 	size_t packed_git_window_size =
@@ -137,14 +137,17 @@ struct object_entry *get_object_entry(const struct object_id *oid)
 	return NULL;
 }
 
+static void install_write_object_override(void);
+
 /* Mostly copied from fast-import.c's cmd_main() */
 static void init(void)
 {
 	unsigned int i;
+	struct repo_config_values *cfg = repo_config_values(the_repository);
 
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
-	warn_on_object_refname_ambiguity = 0;
+	cfg->warn_on_object_refname_ambiguity = 0;
 
 	alloc_objects(object_entry_alloc);
 	atom_table_sz = 131071;
@@ -163,6 +166,7 @@ static void init(void)
 	rc_free[cmd_save - 1].next = NULL;
 
 	start_packfile();
+	install_write_object_override();
 
 	parse_one_feature("force", 0);
 	initialized = 1;
@@ -208,7 +212,8 @@ void do_cleanup(int rollback)
 static void start_packfile(void)
 {
 	real_start_packfile();
-	packfile_store_add_pack(the_repository->objects->sources->packfiles, pack_data);
+	struct odb_source_files *files = odb_source_files_downcast(the_repository->objects->sources);
+	packfile_store_add_pack(files->packed, pack_data);
 }
 
 static void end_packfile(void)
@@ -236,7 +241,8 @@ static void end_packfile(void)
 
 	/* uninstall_packed_git(pack_data) */
 	if (pack_data) {
-		packfile_list_remove(&the_repository->objects->sources->packfiles->packs, pack_data);
+		struct odb_source_files *files = odb_source_files_downcast(the_repository->objects->sources);
+		packfile_list_remove(&files->packed->packs, pack_data);
 		close_pack_windows(pack_data);
 	}
 
@@ -261,15 +267,25 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-int odb_source_loose_write_object(struct odb_source *source UNUSED, const void *buf, size_t len,
-                                  enum object_type type, struct object_id *oid,
-                                  struct object_id *compat_oid_in UNUSED, unsigned flags UNUSED)
+static int cinnabar_write_object(struct odb_source *source UNUSED, const void *buf,
+                                 unsigned long len, enum object_type type,
+                                 struct object_id *oid,
+                                 struct object_id *compat_oid UNUSED,
+                                 enum odb_write_object_flags flags UNUSED)
 {
 	struct strslice data;
 	data.buf = (void *)buf;
 	data.len = len;
 	store_git_object(type, data, oid, NULL, NULL);
 	return 0;
+}
+
+static void install_write_object_override(void)
+{
+       struct odb_source *source = the_repository->objects->sources;
+       if (!source || source->type != ODB_SOURCE_FILES)
+               BUG("expected primary odb source to be ODB_SOURCE_FILES");
+       source->write_object = cinnabar_write_object;
 }
 
 struct manifest_line {
@@ -543,7 +559,7 @@ void store_replace_map(struct object_id *result) {
 }
 
 void unpack_object_entry(struct object_entry *oe, char **buf,
-                         unsigned long *len)
+                         size_t *len)
 {
 	// Note: ownership is given out.
 	*buf = gfi_unpack_entry(oe, len);

@@ -259,7 +259,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         percent_decode_str(path.strip_prefix('/').unwrap_or(path)).collect_vec()
     } else {
         let path = url.to_file_path().unwrap();
-        if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
+        if path.metadata().is_ok_and(|m| m.is_file()) {
             return Some(Box::new(BundleConnection::new(File::open(path).unwrap())));
         }
         path.as_os_str().as_bytes().to_owned()

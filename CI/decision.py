@@ -290,8 +290,8 @@ def decision():
             hg="5.4.2",
         )
 
-    for git in ("1.8.5", "2.7.4"):
-        TestTask(git=git, env={"GIT_OLD_VERSION": "1"})
+    for git in ("1.8.5", "2.7.4", "2.44.0"):
+        TestTask(git=git)
 
     for hg in SOME_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION:

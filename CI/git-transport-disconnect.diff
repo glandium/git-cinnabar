@@ -1,8 +1,8 @@
 diff --git a/builtin/clone.c b/builtin/clone.c
-index e77339c847..b1a9973b7c 100644
+index fba3c9c508..2c9fc2e5a9 100644
 --- a/builtin/clone.c
 +++ b/builtin/clone.c
-@@ -1534,7 +1534,7 @@ int cmd_clone(int argc,
+@@ -1614,7 +1614,7 @@ int cmd_clone(int argc,
  	submodule_progress = transport->progress;
  
  	transport_unlock_pack(transport, 0);
@@ -10,24 +10,28 @@ index e77339c847..b1a9973b7c 100644
 +	err = transport_disconnect(transport);
  
  	if (option_dissociate) {
- 		close_object_store(the_repository->objects);
-@@ -1545,8 +1545,9 @@ int cmd_clone(int argc,
+ 		odb_close(the_repository->objects);
+@@ -1625,10 +1625,11 @@ int cmd_clone(int argc,
  		return 1;
  
  	junk_mode = JUNK_LEAVE_REPO;
--	err = checkout(submodule_progress, filter_submodules,
+-	err = checkout(submodule_progress,
+-		       &filter_options,
+-		       filter_submodules,
 -		       ref_storage_format);
 +	if (!err)
-+		err = checkout(submodule_progress, filter_submodules,
++		err = checkout(submodule_progress,
++			       &filter_options,
++			       filter_submodules,
 +			       ref_storage_format);
  
- 	free(remote_name);
- 	strbuf_release(&reflog_msg);
+ 	list_objects_filter_release(&filter_options);
+ 
 diff --git a/builtin/fetch.c b/builtin/fetch.c
-index 80a64d0d26..eddb6616e2 100644
+index a22c319467..4d26a40387 100644
 --- a/builtin/fetch.c
 +++ b/builtin/fetch.c
-@@ -2068,7 +2068,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
+@@ -2389,7 +2389,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
  {
  	struct refspec rs = REFSPEC_INIT_FETCH;
  	int i;
@@ -36,8 +40,8 @@ index 80a64d0d26..eddb6616e2 100644
  	int maybe_prune_tags;
  	int remote_via_config = remote_is_configured(remote, 0);
  
-@@ -2134,9 +2134,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
- 	exit_code = do_fetch(gtransport, &rs, config);
+@@ -2455,9 +2455,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
+ 	exit_code = do_fetch(gtransport, &rs, config, filter_options);
  	sigchain_pop(SIGPIPE);
  	refspec_clear(&rs);
 -	transport_disconnect(gtransport);

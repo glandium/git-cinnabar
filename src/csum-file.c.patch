@@ -1,14 +1,14 @@
 diff --git a/csum-file.c b/csum-file.c
-index 6e21e3cac8..1a4ea61237 100644
+index 9558177a11..0bab81a46f 100644
 --- a/csum-file.c
 +++ b/csum-file.c
 @@ -110,7 +110,8 @@ void discard_hashfile(struct hashfile *f)
  	free_hashfile(f);
  }
  
--void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
-+void real_hashwrite(struct hashfile *f, const void *buf, unsigned int count);
-+void real_hashwrite(struct hashfile *f, const void *buf, unsigned int count)
+-void hashwrite(struct hashfile *f, const void *buf, uint32_t count)
++void real_hashwrite(struct hashfile *f, const void *buf, uint32_t count);
++void real_hashwrite(struct hashfile *f, const void *buf, uint32_t count)
  {
  	while (count) {
  		unsigned left = f->buffer_len - f->offset;

@@ -22,7 +22,7 @@ runs:
       shell: bash
       run: |
         python3 CI/decision.py >> $GITHUB_OUTPUT
-    - uses: actions/setup-node@v3
+    - uses: actions/setup-node@v6
       if: ${{ steps.decision.outputs.matrix }}
       with:
         node-version: '20.x'
@@ -32,7 +32,7 @@ runs:
     - name: Check dependencies
       id: matrix
       if: ${{ steps.decision.outputs.matrix }}
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       with:
         script: |
           const touchOnly = ${{ inputs['touch-caches-only'] }};

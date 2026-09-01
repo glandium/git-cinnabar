@@ -19,7 +19,7 @@ gitweb/Makefile:
 	mkdir -p ${@D}
 	touch $@
 
-config.mak.dev: detect-compiler
+config.mak.dev: tools/detect-compiler
 
 config.mak.uname config.mak.dev:
 	echo "ifndef FAKE_INCLUDE" > $@
@@ -36,7 +36,8 @@ GIT-VERSION-FILE: GIT-VERSION-GEN GIT-VERSION-FILE.in
 GIT-VERSION-FILE.in: $(SOURCE_DIR)/git-core/GIT-VERSION-FILE.in
 	cat $< > $@
 
-GIT-VERSION-GEN detect-compiler:
+GIT-VERSION-GEN tools/detect-compiler tools/generate-hooklist.sh:
+	$(if $(dir $@),mkdir -p $(dir $@))
 	echo "#!/bin/sh" > $@
 	echo ". $(SOURCE_DIR)/git-core/$@" >> $@
 	chmod +x $@
@@ -68,7 +69,7 @@ CINNABAR_OBJECTS += regex.o
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
 define patch
-$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c))
+$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c $$(SOURCE_DIR)/git-core/odb/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
@@ -147,9 +148,10 @@ config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 # Allow for a smoother transition from helper/ to src/
 $(SOURCE_DIR)/helper/%.c: FORCE ;
 
-# hook.o pulls hook-list.h, which requires these two files (although hook-list.h
-# is not actually used)
+# hook.o pulls hook-list.h, which requires Documentation/githooks.txt and
+# tools/generate-hooklist.sh (although hook-list.h is not actually used)
 vpath Documentation/githooks.txt $(SOURCE_DIR)/git-core
 
-generate-hooklist.sh: $(SOURCE_DIR)/git-core/generate-hooklist.sh
-	echo "$<" > $@
+Documentation/githooks.adoc: $(SOURCE_DIR)/git-core/Documentation/githooks.adoc
+	mkdir -p $(dir $@)
+	cp $< $@

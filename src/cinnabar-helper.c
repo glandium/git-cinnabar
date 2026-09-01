@@ -22,6 +22,7 @@
 #include "strslice.h"
 #include "strbuf.h"
 #include "string-list.h"
+#include "odb.h"
 #include "odb/streaming.h"
 #include "object.h"
 #include "oidset.h"
@@ -369,10 +370,8 @@ static NORETURN void die_panic(const char *err, va_list params)
 	do_panic(msg, (size_t)(len < 0) ? 0 : len);
 }
 
-int init_cinnabar(const char *argv0)
+void init_cinnabar(const char *argv0)
 {
-	int nongit = 0;
-
 	set_die_routine(die_panic);
 
 	// Initialization from common-main.c.
@@ -388,30 +387,31 @@ int init_cinnabar(const char *argv0)
 	attr_start();
 
 	init_git_config();
-	setup_git_directory_gently(&nongit);
+}
+
+int init_cinnabar_2(void)
+{
+	int nongit = 0;
+	struct repo_config_values *cfg;
+
+	// When GIT_DIR is set but the repository isn't fully initialized yet
+	// (e.g. during git clone with git 2.44.0), setup_git_directory_gently's
+	// fallback path sets the_repository->objects even when it returns
+	// nongit=1. A second call would die on the already-initialized object
+	// directory. Free it so setup_git_directory_gently can reinitialize
+	// cleanly on the retry.
+	if (the_repository->objects) {
+		odb_free(the_repository->objects);
+		the_repository->objects = NULL;
+	}
+
+	setup_git_directory_gently(the_repository, &nongit);
 	repo_config(the_repository, git_diff_basic_config, NULL);
 	cleanup_git_config(nongit);
 	save_commit_buffer = 0;
-	warn_on_object_refname_ambiguity = 0;
+	cfg = repo_config_values(the_repository);
+	cfg->warn_on_object_refname_ambiguity = 0;
 
-	// In git 2.44, git clone doesn't create a repository that
-	// setup_git_directory_gently will recognize as a git directory.
-	// The first indicator that we might be in a git clone is that
-	// GIT_DIR is set.
-	if (getenv("GIT_DIR") != NULL) {
-		if (nongit) {
-			// If GIT_DIR is set and setup_git_directory_gently
-			// says we're not in a git directory, assume we're in
-			// that weird git 2.44 case.
-			struct strbuf err = STRBUF_INIT;
-			check_repository_format(NULL);
-			if (ref_store_create_on_disk(
-					get_main_ref_store(the_repository),
-					0, &err))
-				die("failed to set up refs db: %s", err.buf);
-			nongit = 0;
-		}
-	}
 	if (!nongit) {
 		prepare_repo_settings(the_repository);
 	}

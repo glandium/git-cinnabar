@@ -239,6 +239,7 @@ XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg
 
 hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 	$(GIT) init $@
+	$(GIT) -C $@ config maintenance.auto false
 	$(GIT) -C $@ remote add origin hg::$(PATH_URL)/$(word 2,$^)
 	cp -r $< $@.tmp
 	$(GIT) -C $@.tmp push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*

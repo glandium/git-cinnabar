@@ -1,8 +1,8 @@
 diff --git a/packfile.c b/packfile.c
-index 80e35f1032..990dbb7295 100644
+index 7fbe47ca18..d5cf62ce33 100644
 --- a/packfile.c
 +++ b/packfile.c
-@@ -1990,8 +1990,10 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
+@@ -2081,8 +2081,10 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
  	}
  }
  

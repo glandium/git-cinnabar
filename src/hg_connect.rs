@@ -973,8 +973,7 @@ pub fn find_common(
                         .filter(|(n, data)| {
                             is_undetermined(**n, data) && !undetermined_set.contains(n)
                         })
-                        .choose_multiple(&mut rng, sample_size - undetermined.len())
-                        .into_iter(),
+                        .choose_multiple(&mut rng, sample_size - undetermined.len()),
                 );
                 other_count = undetermined.len() - roots_count - heads_count;
             }
@@ -1396,7 +1395,7 @@ pub fn get_cinnabarclone_url(
                     if rev_list(
                         refs.iter()
                             .map(|x| &**x)
-                            .chain(args.into_iter())
+                            .chain(args)
                             .chain(other_args.iter().map(|x| &**x)),
                     )
                     .next()

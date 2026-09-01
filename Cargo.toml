@@ -4,11 +4,11 @@
 
 [package]
 name = "git-cinnabar"
-version = "0.7.4"
+version = "0.7.5"
 description = "git remote helper to interact with mercurial repositories"
 authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
-license = "MPL-2.0 AND GPL-2.0"
+license = "MPL-2.0 AND GPL-2.0-only"
 repository = "https://github.com/glandium/git-cinnabar"
 rust-version = "1.75.0"
 include = [
@@ -19,7 +19,9 @@ include = [
   "/git-core/COPYING",
   "/git-core/LGPL-2.1",
   "/git-core/Makefile",
-  "/git-core/detect-compiler",
+  "/git-core/Documentation/githooks.adoc",
+  "/git-core/tools/detect-compiler",
+  "/git-core/tools/generate-hooklist.sh",
   "/git-core/GIT-VERSION-GEN",
   "/git-core/GIT-VERSION-FILE.in",
   "/git-core/version-def.h.in",
@@ -135,7 +137,7 @@ version = "0.1"
 optional = true
 
 [target.'cfg(windows)'.dependencies.zip]
-version = "7"
+version = "4"
 default-features = false
 features = ["deflate-flate2-zlib"]
 optional = true
