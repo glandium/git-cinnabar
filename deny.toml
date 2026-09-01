@@ -8,6 +8,11 @@ targets = [
 ]
 all-features = true
 
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0253", reason = "git-cinnabar does not call LruCache::pop, and its LRU key is a Copy byte-array wrapper with no Drop implementation" },
+]
+
 [licenses]
 allow = [
   "BSD-2-Clause",
