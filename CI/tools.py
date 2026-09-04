@@ -469,6 +469,8 @@ class Build(Task, metaclass=Tool):
                 environ[f"CFLAGS_{target.replace('-', '_')}"] = (
                     f"--sysroot=/sysroot-{arch}"
                 )
+            if target.endswith("windows-gnu"):
+                environ[f"CFLAGS_{target.replace('-', '_')}"] = "-D_WIN32_WINNT=0x0603"
         if "linux" in os:
             environ["PKG_CONFIG_PATH"] = ""
             environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
