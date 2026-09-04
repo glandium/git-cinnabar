@@ -32,23 +32,23 @@ def sources_list(snapshot, sections):
 LLVM_REPO = (
     "echo"
     " deb [signed-by=/usr/share/keyrings/llvm.gpg]"
-    " https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-22 main"
+    " https://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main"
     " > /etc/apt/sources.list.d/llvm.list"
 )
 
 DOCKER_IMAGES = {
     "base": {
-        "from": "debian:bullseye-20250113",
+        "from": "debian:trixie-20260824",
         "commands": [
             "({}) > /etc/apt/sources.list".format(
                 "; ".join(
                     "echo " + l
                     for l in sources_list(
-                        "20250113T204341Z",
+                        "20260824T202934Z",
                         (
-                            ("debian", "bullseye"),
-                            ("debian", "bullseye-updates"),
-                            ("debian-security", "bullseye-security"),
+                            ("debian", "trixie"),
+                            ("debian", "trixie-updates"),
+                            ("debian-security", "trixie-security"),
                         ),
                     )
                 )
