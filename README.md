@@ -118,6 +118,10 @@ combined in a comma-separated list:
   `refs/heads/$branch/$head`, where `$branch` is the mercurial branch name
   and `$head` is the full changeset sha1 of that head.
 
+- `topics`: in this mode, the mercurial repository's topics are exposed
+  as `refs/heads/topics/$branch/$topic`, where `$branch` is the
+  mercurial branch name and `$topic` is the topic name on that branch.
+
 When these values are used in combinations, the branch mappings are varied
 accordingly to make the type of each remote ref explicit and to avoid name
 collisions.
@@ -125,21 +129,29 @@ collisions.
 - When combining `bookmarks` and `heads`, bookmarks are exposed as
   `refs/heads/bookmarks/$bookmark` and branch heads are exposed as
   `refs/heads/branches/$branch/$head` (where `$head` is the full changeset
-  sha1 of the head).
+  sha1 of the head). Similarly, when combining `topics` and `heads`,
+  topics are exposed as `refs/heads/topics/$branch/$topic/$head` and
+  branch heads are exposed as `refs/heads/branches/$branch/$head`.
 
 - When combining `bookmarks` and `tips`, bookmarks are exposed as
   `refs/heads/bookmarks/$bookmark` and branch tips are exposed as
   `refs/heads/branches/$branch`. Any other heads of the same branch are not
-  exposed.
+  exposed. Similarly, when combining `topics` and `tips`, topic tips are
+  exposed as `refs/heads/topics/$branch/$topic` and branch tips are exposed
+  as `refs/heads/branches/$branch`. Any other heads of the same topic are
+  not exposed.
 
 - When combining all of `bookmarks`, `heads`, and `tips`, bookmarks are
   exposed as `refs/heads/bookmarks/$bookmark`, branch heads are exposed as
   `refs/heads/branches/$branch/$head` (where `$head` is the full changeset
   sha1 of the head), except for the branch tips, which are exposed as
-  `refs/heads/branches/$branch/tip`.
+  `refs/heads/branches/$branch/tip`.  Similarly, if `topics` is added to
+  the mix, topic heads are also exposed as
+  `refs/heads/topics/$branch/$topic/$head`, except for the topic tip, which
+  is exposed as refs/heads/topics/$branch/$topic/tip.
 
-The shorthand `all` (also the default), is the combination of `bookmarks`,
-`heads`, and `tips`.
+The shorthand `all` is the combination of `bookmarks`, `heads`, `tips`,
+and `topics`. The default is `bookmarks`, `heads, and `tips`.
 
 The refs style can also be configured per remote with the
 `remote.$remote.cinnabar-refs` configuration. It is also possible to use
