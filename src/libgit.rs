@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ushort};
 use std::ptr::{self, NonNull};
@@ -143,15 +143,24 @@ extern "C" {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct credential([u8; 0]);
+pub struct credential {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct remote([u8; 0]);
+pub struct remote {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct object_entry([u8; 0]);
+pub struct object_entry {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -199,7 +208,10 @@ extern "C" {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct object_database([u8; 0]);
+pub struct object_database {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -447,15 +459,24 @@ pub fn lookup_replace_commit(c: CommitId) -> CommitId {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct rev_info([u8; 0]);
+pub struct rev_info {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct commit([u8; 0]);
+pub struct commit {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct commit_list([u8; 0]);
+pub struct commit_list {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 extern "C" {
     pub fn commit_oid(c: *const commit) -> *const object_id;
@@ -1076,11 +1097,17 @@ pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct ref_transaction(c_void);
+pub struct ref_transaction {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct ref_store(c_void);
+pub struct ref_store {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 #[allow(dead_code, non_camel_case_types)]
 #[repr(C)]

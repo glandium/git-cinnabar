@@ -75,6 +75,7 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{stderr, stdin, stdout, BufRead, BufReader, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
+use std::marker::{PhantomData, PhantomPinned};
 use std::os::raw::{c_char, c_int};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
@@ -1170,7 +1171,10 @@ fn set_metadata_to(
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-struct r#ref([u8; 0]);
+struct r#ref {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 extern "C" {
     fn add_ref(tail: *mut *mut *mut r#ref, name: *const c_char, oid: *const object_id);
@@ -1198,7 +1202,10 @@ extern "C" {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-struct worktree([u8; 0]);
+struct worktree {
+    _data: (),
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
 
 extern "C" {
     fn term_columns() -> c_int;
