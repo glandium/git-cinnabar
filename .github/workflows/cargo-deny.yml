@@ -29,4 +29,4 @@ jobs:
     - uses: EmbarkStudios/cargo-deny-action@v2
       with:
         command: check ${{ matrix.checks }}
-        rust-version: "1.96.1"
+        rust-version: "1.99.1"

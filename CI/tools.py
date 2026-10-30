@@ -337,7 +337,7 @@ class Hg(Task, metaclass=Tool):
         return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
-def install_rust(version="1.96.1", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.99.1", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
@@ -401,6 +401,10 @@ class Build(Task, metaclass=Tool):
                 ]
             )
         elif variant == "coverage":
+            # Use the last version that uses LLVM 22 because the LLVM 23
+            # compiler-rt that comes with newer versions of rustc doesn't
+            # like the data that comes from C files compiked with clang 22.
+            rust_version = "1.98.1"
             environ["TARGET_CFLAGS"] = " ".join(
                 [
                     "-fprofile-instr-generate",
@@ -412,7 +416,7 @@ class Build(Task, metaclass=Tool):
                 [
                     "-Cinstrument-coverage",
                     "-Ccodegen-units=1",
-                    "-Cinline-threshold=0",
+                    "-Cllvm-args=--inline-threshold=0",
                 ]
             )
             # Build without --release
