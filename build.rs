@@ -242,7 +242,14 @@ fn main() {
         } else if std::env::var("DEP_CURL_STATIC").is_ok() {
             panic!("The curl-compat feature is not compatible with building curl statically");
         }
-        let mut cmd = compiler.to_command();
+        let mut curl_build = cc::Build::new();
+        curl_build
+            .no_default_flags(true)
+            .flags(compiler.args().iter().filter(|arg| {
+                matches!(arg.to_str(), Some("-m32" | "-m64"))
+                    || arg.to_str().is_some_and(|arg| arg.starts_with("--target="))
+            }));
+        let mut cmd = curl_build.get_compiler().to_command();
         cmd.args(&[
             "-shared",
             "-Wl,-soname,libcurl.so.4",
