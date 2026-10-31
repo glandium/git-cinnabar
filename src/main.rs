@@ -2656,7 +2656,7 @@ fn create_merge_changeset(
     } else {
         let parent1_mn_cid = parent1_mid.to_git(store).unwrap();
         let parent2_mn_cid = parent2_mid.to_git(store).unwrap();
-        let range = format!("{}...{}", &parent1_mn_cid, &parent2_mn_cid);
+        let range = format!("{}...{}", parent1_mn_cid, parent2_mn_cid);
         let mut file_dags = HashMap::new();
         for cid in rev_list(["--topo-order", "--full-history", "--reverse", &range]) {
             let commit = RawCommit::read(cid).unwrap();
