@@ -11,6 +11,9 @@ all-features = true
 [advisories]
 ignore = [
   { id = "RUSTSEC-2026-0253", reason = "git-cinnabar does not call LruCache::pop, and its LRU key is a Copy byte-array wrapper with no Drop implementation" },
+  { id = "RUSTSEC-2026-0367", reason = "zip is only used on Windows, and git-cinnabar stream-reads one regular file instead of using the affected extraction APIs" },
+  { id = "RUSTSEC-2026-0368", reason = "zip is only used on Windows, and git-cinnabar stream-reads one regular file instead of using the affected extraction APIs" },
+  { id = "RUSTSEC-2026-0369", reason = "zip is only used on Windows, and git-cinnabar stream-reads one regular file instead of using the affected extraction APIs" },
 ]
 
 [licenses]
