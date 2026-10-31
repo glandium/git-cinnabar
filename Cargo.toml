@@ -143,7 +143,7 @@ features = ["deflate-flate2-zlib"]
 optional = true
 
 [dependencies.zstd]
-version = "0.13"
+version = "0.14"
 default-features = false
 
 [build-dependencies]
