@@ -655,7 +655,7 @@ fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> 
 }
 
 fn validate_label(label: &[u8], typ: &str) -> Result<(), String> {
-    const RESERVED_CHARS: [u8; 4] = [b':', b'\0', b'\n', b'\r'];
+    const RESERVED_CHARS: [u8; 4] = *b":\0\n\r";
     match label {
         b"tip" | b"." | b"null" => Err(format!(
             "Cannot use reserved name '{}' as a {} name",
