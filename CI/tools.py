@@ -453,9 +453,9 @@ class Build(Task, metaclass=Tool):
                 f"--target={target}",
                 "-fuse-ld=lld",
             ]
-            if "linux" in os:
+            if target.endswith("linux-gnu"):
                 link_args.append(f"--sysroot=/sysroot-{arch}")
-            if os.startswith("mingw"):
+            if target.endswith("windows-gnu"):
                 link_args.append(f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32")
                 link_args.append("-Wl,-Xlink,-Brepro")
             environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
@@ -465,7 +465,7 @@ class Build(Task, metaclass=Tool):
             rustflags = environ.pop("RUSTFLAGS", None)
             if rustflags:
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
-            if "linux" in os:
+            if target.endswith("linux-gnu"):
                 environ[f"CFLAGS_{target.replace('-', '_')}"] = (
                     f"--sysroot=/sysroot-{arch}"
                 )
