@@ -5149,7 +5149,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let mut info = None;
     let mut store: Lazy<Result<_, _>> = Lazy::new(the_store);
     loop {
-        buf.truncate(0);
+        buf.clear();
         stdin.read_until(b'\n', &mut buf).unwrap();
         if buf.ends_with(b"\n") {
             buf.pop();

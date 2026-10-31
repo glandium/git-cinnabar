@@ -725,7 +725,7 @@ impl<'a, const CHUNK_SIZE: usize> BundlePartWriter<'a, CHUNK_SIZE> {
     fn flush_buf_as_chunk(&mut self) -> io::Result<()> {
         if let Some(bundle2_buf) = self.bundle2_buf.as_mut() {
             write_bundle2_chunk(&mut *self.writer, bundle2_buf)?;
-            bundle2_buf.truncate(0);
+            bundle2_buf.clear();
         }
         Ok(())
     }
@@ -751,7 +751,7 @@ impl<const CHUNK_SIZE: usize> Write for BundlePartWriter<'_, CHUNK_SIZE> {
                     self.writer.write_all(bundle2_buf)?;
                 }
                 let remaining = CHUNK_SIZE - bundle2_buf.len();
-                bundle2_buf.truncate(0);
+                bundle2_buf.clear();
                 self.writer.write_all(&buf[..remaining])?;
                 buf = &buf[remaining..];
             }

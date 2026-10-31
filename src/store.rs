@@ -2403,7 +2403,7 @@ pub fn merge_metadata(
             let mut bundle = BufReader::new(bundle);
             let mut line = Vec::new();
             loop {
-                line.truncate(0);
+                line.clear();
                 bundle.read_until(b'\n', &mut line).unwrap();
                 if line.ends_with(b"\n") {
                     line.pop();
