@@ -160,6 +160,7 @@ def download(url, system, binary_path):
             if t1 - self._t0 > 0.1:
                 self.show_progress()
                 sys.stderr.flush()
+                self._t0 = t1
             return data
 
         def finish(self):
